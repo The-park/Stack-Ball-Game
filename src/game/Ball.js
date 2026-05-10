@@ -25,16 +25,19 @@ class Ball {
 		this._visualZOffset = 0;
 		this._baseScale = 1.0;
 
-		// 3D shaded sphere with a SINGLE clean highlight (low envMapIntensity
-		// suppresses the multi-blob specular from the room environment).
+		// 3D shaded sphere — Physical material with a clearcoat so the ball gets
+		// a clean glossy specular highlight from the directional light (matches
+		// the reference ball's plastic/glossy look).
 		const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 32, 24);
-		const ballMat = new THREE.MeshStandardMaterial({
+		const ballMat = new THREE.MeshPhysicalMaterial({
 			color: 0x3A78FF,
-			roughness: 0.42,
+			roughness: 0.46,
 			metalness: 0.0,
 			emissive: 0x1A3FAA,
-			emissiveIntensity: 0.08,
-			envMapIntensity: 0.25
+			emissiveIntensity: 0.06,
+			envMapIntensity: 0.22,
+			clearcoat: 0.65,
+			clearcoatRoughness: 0.18
 		});
 		this.mesh = new THREE.Mesh(ballGeo, ballMat);
 		this.mesh.castShadow = true;

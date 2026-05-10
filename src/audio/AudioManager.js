@@ -127,54 +127,107 @@ class AudioManager {
 	}
 
 	_synthBreak(ctx, dest, v) {
-		const dur = 0.14;
-		const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * dur), ctx.sampleRate);
+		// Pleasant "ting" — two-osc layered triangle bell tone.
+		// Velocity scales pitch in 0.85–1.25x range so consecutive breaks feel musical.
+		const t = ctx.currentTime;
+		const pitch = Math.max(0.85, Math.min(1.25, v));
+
+		// Master envelope for this hit — short attack, exp decay.
+		const out = ctx.createGain();
+		out.gain.setValueAtTime(0.0, t);
+		out.gain.linearRampToValueAtTime(0.30, t + 0.005);
+		out.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+		out.connect(dest);
+
+		// Body — bright triangle, slight downward pitch glide.
+		const o1 = ctx.createOscillator();
+		o1.type = 'triangle';
+		o1.frequency.setValueAtTime(880 * pitch, t);
+		o1.frequency.exponentialRampToValueAtTime(660 * pitch, t + 0.15);
+		const g1 = ctx.createGain();
+		g1.gain.value = 0.65;
+		o1.connect(g1).connect(out);
+		o1.start(t);
+		o1.stop(t + 0.20);
+
+		// Air — a gentle higher partial gives the "sparkle".
+		const o2 = ctx.createOscillator();
+		o2.type = 'sine';
+		o2.frequency.value = 1760 * pitch;
+		const g2 = ctx.createGain();
+		g2.gain.setValueAtTime(0.0, t);
+		g2.gain.linearRampToValueAtTime(0.18, t + 0.004);
+		g2.gain.exponentialRampToValueAtTime(0.001, t + 0.10);
+		o2.connect(g2).connect(out);
+		o2.start(t);
+		o2.stop(t + 0.12);
+	}
+
+	_synthBounce(ctx, dest, v) {
+		// Soft "thud" for hard-slab hits — low sine with a tiny noise click.
+		// Quick attack, no chirp, fast decay so it doesn't feel like an alarm.
+		void v;
+		const t = ctx.currentTime;
+
+		const out = ctx.createGain();
+		out.gain.setValueAtTime(0.0, t);
+		out.gain.linearRampToValueAtTime(0.42, t + 0.004);
+		out.gain.exponentialRampToValueAtTime(0.001, t + 0.13);
+		out.connect(dest);
+
+		const o = ctx.createOscillator();
+		o.type = 'sine';
+		o.frequency.setValueAtTime(110, t);
+		o.frequency.exponentialRampToValueAtTime(80, t + 0.10);
+		o.connect(out);
+		o.start(t);
+		o.stop(t + 0.14);
+
+		// Tiny noise click for "thud" texture — 12 ms, lowpassed.
+		const buf = ctx.createBuffer(1, Math.floor(ctx.sampleRate * 0.012), ctx.sampleRate);
 		const data = buf.getChannelData(0);
-		for (let i = 0; i < data.length; i += 1) {
-			data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
-		}
+		for (let i = 0; i < data.length; i += 1) data[i] = (Math.random() * 2 - 1);
 		const src = ctx.createBufferSource();
 		src.buffer = buf;
 		const lp = ctx.createBiquadFilter();
 		lp.type = 'lowpass';
-		const t = ctx.currentTime;
-		lp.frequency.setValueAtTime(1700 * v, t);
-		lp.frequency.exponentialRampToValueAtTime(220, t + 0.1);
-		const g = ctx.createGain();
-		g.gain.setValueAtTime(0.55, t);
-		g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-		src.connect(lp).connect(g).connect(dest);
+		lp.frequency.value = 320;
+		const ng = ctx.createGain();
+		ng.gain.value = 0.18;
+		src.connect(lp).connect(ng).connect(out);
 		src.start(t);
-		src.stop(t + dur + 0.02);
-	}
-
-	_synthBounce(ctx, dest, v) {
-		const t = ctx.currentTime;
-		const o = ctx.createOscillator();
-		o.type = 'sine';
-		const base = 220 * v;
-		o.frequency.setValueAtTime(base, t);
-		o.frequency.exponentialRampToValueAtTime(base * 1.9, t + 0.06);
-		const g = ctx.createGain();
-		g.gain.setValueAtTime(0.4, t);
-		g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
-		o.connect(g).connect(dest);
-		o.start(t);
-		o.stop(t + 0.08);
+		src.stop(t + 0.014);
 	}
 
 	_synthDeath(ctx, dest) {
+		// Sad-but-soft descending triangle (replaces square buzzer that was harsh).
 		const t = ctx.currentTime;
+
+		const out = ctx.createGain();
+		out.gain.setValueAtTime(0.0, t);
+		out.gain.linearRampToValueAtTime(0.30, t + 0.04);
+		out.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+		out.connect(dest);
+
 		const o = ctx.createOscillator();
-		o.type = 'square';
-		o.frequency.setValueAtTime(330, t);
-		o.frequency.exponentialRampToValueAtTime(80, t + 0.35);
-		const g = ctx.createGain();
-		g.gain.setValueAtTime(0.32, t);
-		g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
-		o.connect(g).connect(dest);
+		o.type = 'triangle';
+		o.frequency.setValueAtTime(440, t);
+		o.frequency.exponentialRampToValueAtTime(220, t + 0.20);
+		o.frequency.exponentialRampToValueAtTime(110, t + 0.50);
+		o.connect(out);
 		o.start(t);
-		o.stop(t + 0.42);
+		o.stop(t + 0.55);
+
+		// Sub-octave layer for warmth.
+		const o2 = ctx.createOscillator();
+		o2.type = 'sine';
+		o2.frequency.setValueAtTime(220, t);
+		o2.frequency.exponentialRampToValueAtTime(55, t + 0.50);
+		const g2 = ctx.createGain();
+		g2.gain.value = 0.45;
+		o2.connect(g2).connect(out);
+		o2.start(t);
+		o2.stop(t + 0.55);
 	}
 
 	_synthWin(ctx, dest) {
@@ -216,32 +269,36 @@ class AudioManager {
 		const ctx = this._ensureCtx();
 		if (!ctx || !this._masterGain) return;
 
-		// Dedicated BGM gain so death/win can duck it without affecting SFX.
+		// Gentle ambient pad — replaces the sawtooth drone the user complained about.
+		// Soft sines (no harmonics), warm triad, very heavy lowpass, low volume.
 		const out = ctx.createGain();
 		out.gain.value = 0.0;
-		out.gain.linearRampToValueAtTime(0.10, ctx.currentTime + 1.6);
+		out.gain.linearRampToValueAtTime(0.045, ctx.currentTime + 2.0);  // was 0.10 — quieter
 		out.connect(this._masterGain);
 		this._bgmGain = out;
 
 		const lp = ctx.createBiquadFilter();
 		lp.type = 'lowpass';
-		lp.frequency.value = 600;
-		lp.Q.value = 4;
+		lp.frequency.value = 380;     // tighter cutoff — no high-freq buzzing
+		lp.Q.value = 0.7;             // gentle slope, no resonance peak
 
+		// Slow filter sweep for breathing motion.
 		const lfo = ctx.createOscillator();
-		lfo.frequency.value = 0.07;
+		lfo.frequency.value = 0.05;   // ~20s cycle
 		const lfoGain = ctx.createGain();
-		lfoGain.gain.value = 380;
+		lfoGain.gain.value = 120;     // small sweep range
 		lfo.connect(lfoGain).connect(lp.frequency);
 		lfo.start();
 
+		// Warm consonant chord (root + fifth + octave) on PURE SINES.
 		const oscs = [];
-		[110, 110.4, 165, 220.8].forEach((f) => {
+		[131, 196, 262, 392].forEach((f, idx) => {
 			const o = ctx.createOscillator();
-			o.type = 'sawtooth';
+			o.type = 'sine';
 			o.frequency.value = f;
 			const og = ctx.createGain();
-			og.gain.value = f < 200 ? 0.55 : 0.18;
+			// Bass louder, top very quiet — natural acoustic balance.
+			og.gain.value = idx === 0 ? 0.55 : (idx === 3 ? 0.10 : 0.22);
 			o.connect(og).connect(lp);
 			o.start();
 			oscs.push(o, og);
@@ -295,11 +352,13 @@ class AudioManager {
 			const t = this._ctx.currentTime;
 			const g = this._bgmGain.gain;
 			const cur = g.value;
+			// Base volume matches the new gentle pad (0.045, was 0.10).
+			const base = 0.045;
 			try {
 				g.cancelScheduledValues(t);
 				g.setValueAtTime(cur, t);
-				g.linearRampToValueAtTime(0.10 * target, t + durationMs / 1000);
-				g.linearRampToValueAtTime(0.10, t + ms / 1000);
+				g.linearRampToValueAtTime(base * target, t + durationMs / 1000);
+				g.linearRampToValueAtTime(base, t + ms / 1000);
 			} catch { /* noop */ }
 		}
 	}

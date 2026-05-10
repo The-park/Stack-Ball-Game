@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover"/>
+  <meta name="theme-color" content="#3A78FF"/>
+  <title>Stack Ball Pro</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@500;700;800&family=Bricolage+Grotesque:wght@500;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      /* Neutral fallback — actual scene background is a 3D themed sky-dome. */
+      --bg-top:#FFFFFF;
+      --bg-mid:#F2F4F8;
+      --bg-bottom:#E0E5EE;
+
+      /* UI Colors */
+      --primary:#3A78FF;
+      --primary-light:#6F9CFF;
+      --secondary:#FFD93D;
+      --accent:#1F2733;
+      --glass-bg:rgba(255,255,255,0.75);
+      --glass-border:rgba(255,255,255,0.9);
+      --shadow-soft:rgba(31,39,51,0.15);
+
+      /* Typography */
+      --ui-font:"Outfit","Segoe UI","Helvetica Neue",sans-serif;
+      --title-font:"Bricolage Grotesque","Poppins","Arial Rounded",sans-serif;
+    }
+    *{margin:0;padding:0;box-sizing:border-box;}
+    html,body{width:100%;height:100%;overflow:hidden;touch-action:none;}
+    body{
+      background:linear-gradient(180deg,var(--bg-top) 0%,var(--bg-mid) 50%,var(--bg-bottom) 100%);
+      position:relative;
+    }
+    /* CSS overlays removed — the 3D sky-dome handles atmospheric depth now. */
+    #app{width:100vw;height:100vh;position:relative;}
+    #ui{position:absolute;inset:0;pointer-events:none;font-family:var(--ui-font);z-index:5;}
+  </style>
+  <script type="module" crossorigin src="./assets/index-D7ScL5Q5.js"></script>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="ui"></div>
+</body>
+</html>

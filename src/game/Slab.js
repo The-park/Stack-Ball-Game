@@ -1,22 +1,34 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 
-// Modern Soft Pastel Colors - Easy on Eyes & Aesthetic
-const SOFT_COLORS = [
-  0xFFB3BA,  // Soft Pink
-  0xFFDFBA,  // Soft Peach
-  0xFFFFBA,  // Soft Yellow
-  0xBAFFC9,  // Soft Mint
-  0xBAE1FF,  // Soft Sky
-  0xE7BAFF,  // Soft Lavender
-  0xFFBAF3,  // Soft Rose
-  0xFFC4D6,  // Soft Coral
+// Per-level themes — saturated single-hue palettes, swap per level so each level
+// has its own visual identity (yellow → red → blue → green ...) like the
+// commercial reference. Each theme has a primary and a slightly-shifted secondary
+// so adjacent slabs alternate for layered depth.
+const LEVEL_THEMES = [
+  { primary: 0xFFD200, secondary: 0xFFB800, sky: 0xB892FF, ground: 0xF5E1FF },  // 1 — saturated yellow on lavender
+  { primary: 0xFF5C5C, secondary: 0xFF3838, sky: 0xFFD27F, ground: 0xFFE9C9 },  // 2 — red on amber
+  { primary: 0x4FC3F7, secondary: 0x29B6F6, sky: 0xFFB199, ground: 0xFFE0D2 },  // 3 — sky-blue on coral
+  { primary: 0x66BB6A, secondary: 0x4CAF50, sky: 0xC4A4FF, ground: 0xEFE3FF },  // 4 — green on lavender
+  { primary: 0xFF8A65, secondary: 0xFF7043, sky: 0x9FE5FF, ground: 0xD8F2FF },  // 5 — orange on cyan
+  { primary: 0xBA68C8, secondary: 0xAB47BC, sky: 0xFFE082, ground: 0xFFF1C2 },  // 6 — purple on gold
+  { primary: 0x26C6DA, secondary: 0x00BCD4, sky: 0xFFB6B9, ground: 0xFFD9DA },  // 7 — cyan on pink
+  { primary: 0xEC407A, secondary: 0xD81B60, sky: 0xB7E1FF, ground: 0xDCEFFF },  // 8 — magenta on blue
+  { primary: 0xFFC832, secondary: 0xFFB300, sky: 0x9FFFD2, ground: 0xCDFFEB },  // 9 — gold on mint
+  { primary: 0x4DD0E1, secondary: 0x26C6DA, sky: 0xFFA6C8, ground: 0xFFCFE0 },  // 10 — teal on pink
 ];
 
-const HARD_COLOR = 0x2D2D3A;  // Softer dark (not pure black)
+export function getLevelTheme(levelNumber) {
+  const idx = Math.max(0, Math.min(LEVEL_THEMES.length - 1, (levelNumber | 0) - 1));
+  return LEVEL_THEMES[idx];
+}
+
+const HARD_COLOR = 0x2A2D34;  // Charcoal — high contrast but visible edge highlights
 const PENTAGON_SIDES = 5;
-const THICKNESS = 0.28;
-const OUTER_R = 2.8;
+// Slabs are now near-cube (thickness 0.42 vs spacing 0.55 = 76% fill).
+// Thicker means the side face dominates the view, not the radial-fan top.
+const THICKNESS = 0.42;
+const OUTER_R = 2.6;
 
 function createPentagonVertices(radius, rotationOffset) {
   const verts = [];
@@ -77,36 +89,34 @@ function buildSpotMesh(oA, oB, iB, iA, color) {
   const colorObj = new THREE.Color(color);
   const mat = new THREE.MeshStandardMaterial({
     color,
-    roughness: isHard ? 0.9 : 0.24,
-    metalness: isHard ? 0.02 : 0.05,
-    emissive: isHard ? 0x06080d : colorObj.clone().multiplyScalar(0.34),
-    emissiveIntensity: isHard ? 0.02 : 0.34,
+    roughness: isHard ? 0.78 : 0.50,
+    metalness: isHard ? 0.0 : 0.02,
+    emissive: isHard ? 0x150b13 : colorObj.clone().multiplyScalar(0.06),
+    emissiveIntensity: isHard ? 0.02 : 0.05,
+    envMapIntensity: 0.45,
+    // FLAT shading — eliminates the "sunburst" pattern smooth-shading produced
+    // by averaging top-face and side-face normals at the shared corner verts.
+    // Each face now reads with a clean uniform tone, matching reference's flat-shaded look.
     flatShading: true,
   });
 
   return new THREE.Mesh(geo, mat);
 }
 
-function createSoftMask(totalSpots, runCount, minRun, maxRun) {
-  const mask = new Array(totalSpots).fill(false);
-  const safeRunCount = Math.max(1, Math.min(runCount, totalSpots));
-
-  for (let r = 0; r < safeRunCount; r++) {
-    const start = Math.floor(Math.random() * totalSpots);
-    const runLen = Math.max(minRun, Math.min(maxRun, Math.floor(minRun + Math.random() * (maxRun - minRun + 1))));
-
-    for (let j = 0; j < runLen; j++) {
-      mask[(start + j) % totalSpots] = true;
-    }
+// Soft mask = one contiguous arc of soft tabs (~70% of circumference) and ONE
+// fixed danger wedge (~30%). Danger position is shared across all slabs in a
+// level so the player sees a coherent vertical hard column.
+function createSoftMask(totalSpots, dangerStart, dangerWidth) {
+  const mask = new Array(totalSpots).fill(true);
+  const ds = ((dangerStart | 0) % totalSpots + totalSpots) % totalSpots;
+  const dw = Math.max(1, Math.min(totalSpots - 2, dangerWidth | 0));
+  for (let j = 0; j < dw; j++) {
+    mask[(ds + j) % totalSpots] = false; // false = hard
   }
-
-  if (!mask.some(Boolean)) {
-    const forced = Math.min(3, totalSpots);
-    for (let i = 0; i < forced; i++) mask[i] = true;
-  }
-
   return mask;
 }
+
+let _slabUidCounter = 0;
 
 export default class Slab {
   constructor(scene, world, physics, yPosition, colorIndex, config, towerGroup) {
@@ -115,24 +125,36 @@ export default class Slab {
     this.physics = physics;
     this.yPosition = yPosition;
     this.towerGroup = towerGroup;
+    this.uid = ++_slabUidCounter;
 
     this.isBroken = false;
     this.debris = [];
     this.pieces = [];
 
-    this.softColor = SOFT_COLORS[colorIndex % SOFT_COLORS.length];
+    // Two soft shades alternate per spot for layered visual depth.
+    const theme = config?.levelTheme;
+    this.softPrimary = theme?.primary ?? 0xFFD93D;
+    this.softSecondary = theme?.secondary ?? 0xFFC107;
+    // Backwards-compat: GameManager._levelComplete reads `softColor` for confetti tint.
+    this.softColor = this.softPrimary;
 
     const spotsPerSide = Math.max(3, config?.spotsPerSide ?? 4);
     const poleRadius = Math.max(0.05, config?.poleRadius ?? 0.22);
-    const poleGap = Math.max(0.08, config?.poleGap ?? 0.34);
-    const innerRadius = Math.max(0.66, poleRadius + poleGap);
+    const poleGap = Math.max(0.08, config?.poleGap ?? 0.18);
+    // Inner radius now 0.40 (was 0.66) — smaller than ball radius 0.50 so the
+    // ball physically rests ON TOP of the slab annulus instead of clipping
+    // through the inner hole. Fixes the "ball embedded in slab" visual.
+    const innerRadius = Math.max(0.40, poleRadius + poleGap);
     const totalSpots = PENTAGON_SIDES * spotsPerSide;
-    const softRunCount = Math.max(1, config?.softRunCount ?? 2);
-    const softRunMin = Math.max(1, config?.softRunMin ?? 2);
-    const softRunMax = Math.max(softRunMin, config?.softRunMax ?? 4);
 
-    const softMask = createSoftMask(totalSpots, softRunCount, softRunMin, softRunMax);
-    const rotationOffset = Math.random() * Math.PI * 2;
+    // Persistent per-level danger column (passed down from Tower).
+    const dangerStart = (config?.dangerStart ?? 0) | 0;
+    const dangerWidth = Math.max(2, Math.min(totalSpots - 4, (config?.dangerWidth ?? 6) | 0));
+
+    const softMask = createSoftMask(totalSpots, dangerStart, dangerWidth);
+    // Shared rotationOffset (per-level) so the hard column lines up vertically
+    // through every slab — crucial for the "vertical danger band" gameplay read.
+    const rotationOffset = config?.levelRotationOffset ?? 0;
 
     const outerVerts = createPentagonVertices(OUTER_R, rotationOffset);
     const innerVerts = createPentagonVertices(innerRadius, rotationOffset);
@@ -155,7 +177,9 @@ export default class Slab {
         const siB = lerp2(iA, iB, t1);
 
         const isSoft = softMask[spotIndex];
-        const color = isSoft ? this.softColor : HARD_COLOR;
+        // Alternate primary/secondary so adjacent slabs read as layered.
+        const softShade = ((colorIndex + spotIndex) & 1) === 0 ? this.softPrimary : this.softSecondary;
+        const color = isSoft ? softShade : HARD_COLOR;
         const material = isSoft ? this.physics.softSlabMaterial : this.physics.hardSlabMaterial;
 
         const mesh = buildSpotMesh(soA, soB, siB, siA, color);
@@ -211,20 +235,20 @@ export default class Slab {
 
   syncBodiesToTower() {
     if (this.isBroken) return;
+    if (!this._tmpVec3) {
+      this._tmpVec3 = new THREE.Vector3();
+      this._tmpQuat = new THREE.Quaternion();
+    }
+    const wp = this._tmpVec3;
+    const wq = this._tmpQuat;
     for (const p of this.pieces) {
       if (!p.body || !p.mesh) continue;
-      this._syncBody(p.body, p.mesh);
+      p.mesh.getWorldPosition(wp);
+      p.mesh.getWorldQuaternion(wq);
+      p.body.position.set(wp.x, wp.y, wp.z);
+      p.body.quaternion.set(wq.x, wq.y, wq.z, wq.w);
+      p.body.aabbNeedsUpdate = true;
     }
-  }
-
-  _syncBody(body, mesh) {
-    const wp = new THREE.Vector3();
-    const wq = new THREE.Quaternion();
-    mesh.getWorldPosition(wp);
-    mesh.getWorldQuaternion(wq);
-    body.position.set(wp.x, wp.y, wp.z);
-    body.quaternion.set(wq.x, wq.y, wq.z, wq.w);
-    body.wakeUp();
   }
 
   breakWholeSlab(particleSystem) {

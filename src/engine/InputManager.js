@@ -6,7 +6,7 @@ class InputManager {
 		this.activePointerId = null;
 		this.lastX = 0;
 		this._deltaX = 0;
-		this.sensitivity = 0.005;
+		this.sensitivity = 0.0055;
 		this.inertia = 0;
 		this.inertiaDamping = 0.88;
 		this._indicatorHideTimer = null;
@@ -15,21 +15,25 @@ class InputManager {
 		this.rotationIndicator.style.cssText = `
 			position:fixed;
 			left:50%;
-			top:58%;
+			top:72%;
 			transform:translate(-50%,-50%) scale(0.9);
-			width:70px;
-			height:70px;
-			border:3px solid rgba(244,67,54,0.9);
+			width:64px;
+			height:64px;
+			border:2px solid rgba(255,107,157,0.85);
 			border-radius:50%;
 			display:flex;
 			align-items:center;
 			justify-content:center;
-			color:rgba(244,67,54,0.95);
-			font-size:30px;
+			color:rgba(196,69,105,0.95);
+			background:rgba(255,255,255,0.55);
+			backdrop-filter:blur(8px);
+			-webkit-backdrop-filter:blur(8px);
+			font-size:28px;
 			font-weight:900;
 			opacity:0;
 			pointer-events:none;
 			z-index:40;
+			box-shadow:0 6px 20px rgba(255,107,157,0.18);
 			transition:opacity 0.15s ease, transform 0.15s ease;
 		`;
 		this.rotationIndicator.textContent = '↻';
@@ -43,7 +47,7 @@ class InputManager {
 		this._onWindowBlur = this._onWindowBlur.bind(this);
 
 		window.addEventListener('pointerdown', this._onPointerDown, { passive: true });
-		window.addEventListener('pointermove', this._onPointerMove, { passive: false });
+		window.addEventListener('pointermove', this._onPointerMove, { passive: true });
 		window.addEventListener('pointerup', this._onPointerUp);
 		window.addEventListener('pointercancel', this._onPointerCancel);
 
@@ -108,12 +112,12 @@ class InputManager {
 
 	_onKeyDown(event) {
 		if (event.key === 'ArrowLeft') {
-			this.inertia = -0.05;
+			this.inertia = -0.022;
 			this._showRotationIndicator(-1);
 		}
 
 		if (event.key === 'ArrowRight') {
-			this.inertia = 0.05;
+			this.inertia = 0.022;
 			this._showRotationIndicator(1);
 		}
 	}

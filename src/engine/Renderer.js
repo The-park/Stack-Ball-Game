@@ -1,23 +1,65 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { FXAAShader } from 'three/examples/jsm/shaders/FXAAShader.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+
+const VignetteShader = {
+	uniforms: {
+		tDiffuse: { value: null },
+		offset: { value: 1.05 },
+		darkness: { value: 0.55 }
+	},
+	vertexShader: `
+		varying vec2 vUv;
+		void main() {
+			vUv = uv;
+			gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+		}
+	`,
+	fragmentShader: `
+		uniform float offset;
+		uniform float darkness;
+		uniform sampler2D tDiffuse;
+		varying vec2 vUv;
+		void main() {
+			vec4 texel = texture2D( tDiffuse, vUv );
+			vec2 uv = ( vUv - vec2( 0.5 ) ) * vec2( offset );
+			float vig = 1.0 - smoothstep( 0.55, 1.05, dot( uv, uv ) * 0.85 );
+			vec3 col = mix( texel.rgb * vec3( 1.02, 0.98, 0.99 ), texel.rgb, vig );
+			col = mix( col, col * vec3( 0.92, 0.85, 0.88 ), ( 1.0 - vig ) * darkness );
+			gl_FragColor = vec4( col, texel.a );
+		}
+	`
+};
 
 class Renderer {
 	constructor(mountEl) {
 		this.scene = new THREE.Scene();
-		this.scene.background = null;
-		this.scene.fog = new THREE.FogExp2('#5f7fa0', 0.014);
+		// 3D background dome — receives per-level sky/ground tones via setSkyTheme().
+		// Initial neutral white-blue so first paint isn't pink.
+		this._skyDome = this._createSkyDome(0xB892FF, 0xF5E1FF);
+		this.scene.add(this._skyDome);
+		this.scene.fog = new THREE.Fog(0xE8E2F2, 12, 38);
 
 		const aspect = window.innerWidth / window.innerHeight;
-		this.camera = new THREE.PerspectiveCamera(47, aspect, 0.1, 300);
-		this.camera.position.set(0, 5.2, 13.5);
-		this.camera.lookAt(0, 0, 0);
+		// Telephoto-ish FOV 38° + slightly further camera matches reference's
+		// "tower receding into distance" composition.
+		this.camera = new THREE.PerspectiveCamera(38, aspect, 0.1, 300);
+		this.camera.position.set(0, 1.0, 10.5);
+		this.camera.lookAt(0, -0.6, 0);
 
 		this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 		this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 		this.renderer.setSize(window.innerWidth, window.innerHeight);
 		this.renderer.setClearColor(0x000000, 0);
 		this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-		this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-		this.renderer.toneMappingExposure = 1.08;
+		// Linear output — saturated theme colors should pop, not be muddied by ACES.
+		this.renderer.toneMapping = THREE.NoToneMapping;
+		this.renderer.toneMappingExposure = 1.0;
 		this.renderer.shadowMap.enabled = true;
 		this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -27,44 +69,139 @@ class Renderer {
 		this._ballMesh = null;
 		this._lookY = 0;
 		this.shakeIntensity = 0;
+		this._cameraBaseX = 0;
+		this._cameraBaseY = 1.0;
 
 		this._setupLights();
+		this._setupEnvironment();
+		this._setupComposer();
 
 		this._onResize = this._onResize.bind(this);
 		window.addEventListener('resize', this._onResize);
 	}
 
 	_setupLights() {
-		const ambient = new THREE.AmbientLight(0xf6f7ff, 0.5);
+		// Neutral white key + cool sky fill. Material color now drives the look,
+		// not the lighting. This is what shipped Stack Ball / Helix Jump do.
+		const ambient = new THREE.AmbientLight(0xffffff, 0.42);
 		this.scene.add(ambient);
 
-		const directional = new THREE.DirectionalLight(0xfff3e5, 1.05);
-		directional.position.set(8, 22, 10);
+		const directional = new THREE.DirectionalLight(0xffffff, 1.05);
+		directional.position.set(7, 20, 8);
 		directional.castShadow = true;
 		directional.shadow.mapSize.set(2048, 2048);
-		directional.shadow.camera.left = -15;
-		directional.shadow.camera.right = 15;
-		directional.shadow.camera.top = 15;
-		directional.shadow.camera.bottom = -15;
-		directional.shadow.normalBias = 0.02;
+		directional.shadow.camera.left = -12;
+		directional.shadow.camera.right = 12;
+		directional.shadow.camera.top = 12;
+		directional.shadow.camera.bottom = -12;
+		directional.shadow.normalBias = 0.025;
+		directional.shadow.bias = -0.0002;
 		this.scene.add(directional);
 
-		const hemisphere = new THREE.HemisphereLight(0x9edcff, 0x27354a, 0.6);
+		// Cool sky fill, warm ground bounce — gives volumetric form without tinting.
+		const hemisphere = new THREE.HemisphereLight(0xb6cbff, 0x2c2520, 0.32);
 		this.scene.add(hemisphere);
 
-		const rim = new THREE.DirectionalLight(0x89dac8, 0.32);
-		rim.position.set(-10, 11, -9);
+		const rim = new THREE.DirectionalLight(0xa8c4ff, 0.22);
+		rim.position.set(-9, 8, -7);
 		this.scene.add(rim);
+	}
 
-		const bounce = new THREE.PointLight(0xffc9a7, 0.18, 36, 2);
-		bounce.position.set(0, -7, 2);
-		this.scene.add(bounce);
+	_createSkyDome(skyColor, groundColor) {
+		const geo = new THREE.SphereGeometry(80, 32, 24);
+		const mat = new THREE.ShaderMaterial({
+			side: THREE.BackSide,
+			depthWrite: false,
+			uniforms: {
+				uSky: { value: new THREE.Color(skyColor) },
+				uGround: { value: new THREE.Color(groundColor) },
+				uHorizon: { value: new THREE.Color(0xffffff) }
+			},
+			vertexShader: `
+				varying float vElev;
+				void main() {
+					vec4 wp = modelMatrix * vec4(position, 1.0);
+					vElev = clamp(wp.y / 60.0 + 0.5, 0.0, 1.0);
+					gl_Position = projectionMatrix * viewMatrix * wp;
+				}
+			`,
+			fragmentShader: `
+				uniform vec3 uSky;
+				uniform vec3 uGround;
+				uniform vec3 uHorizon;
+				varying float vElev;
+				void main() {
+					float t = smoothstep(0.0, 1.0, vElev);
+					vec3 lower = mix(uGround, uHorizon, smoothstep(0.0, 0.5, t));
+					vec3 upper = mix(uHorizon, uSky, smoothstep(0.5, 1.0, t));
+					vec3 col = mix(lower, upper, step(0.5, t));
+					gl_FragColor = vec4(col, 1.0);
+				}
+			`
+		});
+		const dome = new THREE.Mesh(geo, mat);
+		dome.frustumCulled = false;
+		return dome;
+	}
+
+	setSkyTheme(skyHex, groundHex) {
+		if (!this._skyDome) return;
+		const mat = this._skyDome.material;
+		mat.uniforms.uSky.value.setHex(skyHex);
+		mat.uniforms.uGround.value.setHex(groundHex);
+		// Fog now follows the level's GROUND color so the horizon dissolves smoothly
+		// (was hardcoded lavender — clashed with red/orange/green levels).
+		if (this.scene.fog) {
+			this.scene.fog.color.setHex(groundHex);
+		}
+	}
+
+	_setupEnvironment() {
+		// Image-based lighting from a procedural pastel room — gives standard materials
+		// real specular highlights without shipping any HDR asset.
+		const pmrem = new THREE.PMREMGenerator(this.renderer);
+		const room = new RoomEnvironment(this.renderer);
+		const envTex = pmrem.fromScene(room, 0.04).texture;
+		this.scene.environment = envTex;
+		this._envTexture = envTex;
+		pmrem.dispose();
+	}
+
+	_setupComposer() {
+		const w = window.innerWidth;
+		const h = window.innerHeight;
+		this.composer = new EffectComposer(this.renderer);
+		this.composer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+		this.composer.setSize(w, h);
+
+		this._renderPass = new RenderPass(this.scene, this.camera);
+		this.composer.addPass(this._renderPass);
+
+		this._bloomPass = new UnrealBloomPass(
+			new THREE.Vector2(w, h),
+			0.0,  // strength 0 — reference Stack Ball ships without bloom; crisper render
+			0.85,
+			0.95
+		);
+		this.composer.addPass(this._bloomPass);
+
+		this._fxaaPass = new ShaderPass(FXAAShader);
+		this._fxaaPass.uniforms.resolution.value.set(1 / w, 1 / h);
+		this.composer.addPass(this._fxaaPass);
+
+		this._vignettePass = new ShaderPass(VignetteShader);
+		this._vignettePass.uniforms.offset.value = 1.05;
+		this._vignettePass.uniforms.darkness.value = 0.06;
+		this.composer.addPass(this._vignettePass);
+
+		this._outputPass = new OutputPass();
+		this.composer.addPass(this._outputPass);
 	}
 
 	setupCamera(ballMesh) {
 		this._ballMesh = ballMesh;
-		this.camera.position.set(0, 5.2, 13.5);
-		this.camera.lookAt(0, 0, 0);
+		this.camera.position.set(0, 1.0, 10.5);
+		this.camera.lookAt(0, -0.6, 0);
 	}
 
 	updateCamera(dt) {
@@ -72,12 +209,15 @@ class Renderer {
 			return;
 		}
 
-		const targetY = this._ballMesh.position.y + 4.2;
-		const lookY = this._ballMesh.position.y - 1.05;
+		// dy = 1.2, dz = 10.5 → atan(1.2/10.5) ≈ 6.5° down. Near-horizontal.
+		const targetY = this._ballMesh.position.y + 0.6;
+		const lookY = this._ballMesh.position.y - 0.6;
 
-		this.camera.position.y += (targetY - this.camera.position.y) * 0.07;
-		this.camera.position.x = 0;
-		this.camera.position.z = 13.5;
+		this._cameraBaseY += (targetY - this._cameraBaseY) * 0.08;
+		this._cameraBaseX = 0;
+		this.camera.position.x = this._cameraBaseX;
+		this.camera.position.y = this._cameraBaseY;
+		this.camera.position.z = 10.5;
 
 		this._lookY = this._lookY ?? 0;
 		this._lookY += (lookY - this._lookY) * 0.075;
@@ -93,21 +233,40 @@ class Renderer {
 			const amount = this.shakeIntensity;
 			const offsetX = (Math.random() - 0.5) * amount;
 			const offsetY = (Math.random() - 0.5) * amount;
-			this.camera.position.x += offsetX;
-			this.camera.position.y += offsetY;
-			this.shakeIntensity *= 0.88;
+			this.camera.position.x = this._cameraBaseX + offsetX;
+			this.camera.position.y = this._cameraBaseY + offsetY;
+			this.shakeIntensity *= 0.86;
 		} else {
 			this.shakeIntensity = 0;
+			this.camera.position.x = this._cameraBaseX;
+			this.camera.position.y = this._cameraBaseY;
 		}
 
-		this.renderer.render(this.scene, this.camera);
+		if (this.composer) {
+			this.composer.render();
+		} else {
+			this.renderer.render(this.scene, this.camera);
+		}
 	}
 
 	_onResize() {
-		this.camera.aspect = window.innerWidth / window.innerHeight;
+		const w = window.innerWidth;
+		const h = window.innerHeight;
+		const dpr = Math.min(window.devicePixelRatio, 2);
+		this.camera.aspect = w / h;
 		this.camera.updateProjectionMatrix();
-		this.renderer.setSize(window.innerWidth, window.innerHeight);
-		this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+		this.renderer.setSize(w, h);
+		this.renderer.setPixelRatio(dpr);
+		if (this.composer) {
+			this.composer.setSize(w, h);
+			this.composer.setPixelRatio(dpr);
+		}
+		if (this._fxaaPass) {
+			this._fxaaPass.uniforms.resolution.value.set(1 / w, 1 / h);
+		}
+		if (this._bloomPass) {
+			this._bloomPass.setSize?.(w, h);
+		}
 	}
 
 	get scene3D() {

@@ -10,10 +10,8 @@ import { ParticleSystem } from './game/ParticleSystem.js';
 import { HUD } from './ui/HUD.js';
 import { AudioManager } from './audio/AudioManager.js';
 
-console.log('%c✨ STACK BALL PRO v4.2 - VICTORY SEQUENCE FIX ✨', 'color: #FF6B9D; font-weight: bold; font-size: 20px; text-shadow: 0 2px 8px rgba(255,107,157,0.5);');
-console.log('%c🎯 Fixed: Victory sequence hanging after level 3', 'color: #4CAF50; font-weight: bold;');
-console.log('%c🎨 Soft Sunset Theme - Easy on Eyes', 'color: #FEC260; font-weight: bold;');
-console.log('%c💎 Glass Morphism UI - Modern Design', 'color: #FF8DB3;');
+console.log('%c✨ STACK BALL PRO v5.0 — MULTI-AGENT POLISH ✨', 'color: #FF6B9D; font-weight: bold; font-size: 18px;');
+console.log('%c🎯 Physics, design, audio, UX, QA passes applied', 'color: #C44569; font-weight: bold;');
 
 function ensurePerformanceMarksApi() {
 	const perf = globalThis?.performance;
@@ -30,21 +28,13 @@ function ensurePerformanceMarksApi() {
 				configurable: true
 			});
 		} catch {
-			try {
-				perf[name] = noOp;
-			} catch {
-				// Ignore non-writable environments; app logic does not depend on these methods.
-			}
+			try { perf[name] = noOp; } catch { /* noop */ }
 		}
 	}
 
 	const maybeUgt = globalThis?.ugt;
 	if (maybeUgt && typeof maybeUgt === 'object' && typeof maybeUgt.clearMarks !== 'function') {
-		try {
-			maybeUgt.clearMarks = noOp;
-		} catch {
-			// External injected globals may be frozen; ignore safely.
-		}
+		try { maybeUgt.clearMarks = noOp; } catch { /* noop */ }
 	}
 }
 
@@ -74,30 +64,58 @@ async function init() {
 
 	gm.renderer = renderer;
 
+	// Reflect persisted mute state in HUD button on boot.
+	if (audio.isMuted?.()) hud.setMuteState?.(true);
+
 	renderer.setupCamera(ball.mesh);
 
 	window.addEventListener('game:restart', () => gm.restart());
 	window.addEventListener('game:next', () => gm.nextLevel());
+	window.addEventListener('game:final-restart', () => {
+		gm.level = 1;
+		gm.score = 0;
+		gm.restart();
+	});
+	window.addEventListener('game:pause-toggle', () => gm.togglePause());
+	window.addEventListener('game:mute-toggle', () => {
+		const muted = audio.toggleMute();
+		hud.setMuteState?.(muted);
+	});
+
+	window.addEventListener('keydown', (e) => {
+		if (e.key === 'p' || e.key === 'P' || e.key === 'Escape') {
+			if (gm.state === GameState.PLAYING || gm.state === GameState.PAUSED) {
+				gm.togglePause();
+			}
+		}
+		if (e.key === 'm' || e.key === 'M') {
+			const muted = audio.toggleMute();
+			hud.setMuteState?.(muted);
+		}
+	});
 
 	hud.showStartScreen();
 
 	const startTargets = [renderer.renderer.domElement, window];
 	const startEvents = ['pointerup', 'mouseup', 'touchend'];
-	const startOnce = () => {
+	const startOnce = (e) => {
+		// Ignore taps that originated from a HUD button (pause/mute control pill).
+		const target = e?.target;
+		if (target && target.closest && target.closest('.sbp-control-pill')) return;
 		if (gm.state === GameState.IDLE) {
 			gm.start();
 			input.cancelPress?.();
 			audio.startBGM();
-			for (const target of startTargets) {
+			for (const t of startTargets) {
 				for (const eventName of startEvents) {
-					target.removeEventListener(eventName, startOnce);
+					t.removeEventListener(eventName, startOnce);
 				}
 			}
 		}
 	};
-	for (const target of startTargets) {
+	for (const t of startTargets) {
 		for (const eventName of startEvents) {
-			target.addEventListener(eventName, startOnce);
+			t.addEventListener(eventName, startOnce);
 		}
 	}
 
@@ -112,11 +130,15 @@ async function init() {
 		if (gm.state === GameState.PLAYING) {
 			physics.step(dt);
 			ball.update(dt);
-			tower.update(dt, input.rotation);
+			tower.update(dt, input.rotation, ball.body.position.y);
+			gm.tick?.();
 		} else if (gm.state === GameState.WIN) {
-			// Continue animating debris and tower during victory sequence
-			tower.update(dt, 0);
+			tower.update(dt, 0, ball.body.position.y);
 		}
+		// PAUSED, IDLE, DEAD, FINAL_WIN: nothing simulates.
+
+		pole.update?.(ball.mesh.position.y, dt);
+		hud.setControlsVisible?.(gm.state === GameState.PLAYING || gm.state === GameState.PAUSED);
 
 		particles.update(dt);
 		renderer.updateCamera(dt);

@@ -2,8 +2,11 @@ import * as CANNON from 'cannon-es';
 
 class Physics {
 	constructor() {
+		// Gravity tuned to 22 m/s² (vs. cycle-3 35) for a more readable fall pace.
+		// At g=22 a 3 m fall takes ~0.52 s vs. ~0.41 s — gives the player time to
+		// read which side has the soft spot before the ball lands.
 		this._world = new CANNON.World({
-			gravity: new CANNON.Vec3(0, -35, 0)
+			gravity: new CANNON.Vec3(0, -22, 0)
 		});
 		this._world.broadphase = new CANNON.SAPBroadphase(this._world);
 		this._world.allowSleep = false;

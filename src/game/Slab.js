@@ -25,10 +25,10 @@ export function getLevelTheme(levelNumber) {
 
 const HARD_COLOR = 0x2A2D34;  // Charcoal — high contrast but visible edge highlights
 const PENTAGON_SIDES = 5;
-// Slabs are now near-cube (thickness 0.42 vs spacing 0.55 = 76% fill).
-// Thicker means the side face dominates the view, not the radial-fan top.
-const THICKNESS = 0.42;
-const OUTER_R = 2.6;
+// Slimmer slabs + smaller tower = denser stack (~28 slabs visible) matching
+// the reference's tall thin column rather than chunky few-layer pillar.
+const THICKNESS = 0.30;
+const OUTER_R = 1.70;
 
 function createPentagonVertices(radius, rotationOffset) {
   const verts = [];
@@ -141,10 +141,9 @@ export default class Slab {
     const spotsPerSide = Math.max(3, config?.spotsPerSide ?? 4);
     const poleRadius = Math.max(0.05, config?.poleRadius ?? 0.22);
     const poleGap = Math.max(0.08, config?.poleGap ?? 0.18);
-    // Inner radius now 0.40 (was 0.66) — smaller than ball radius 0.50 so the
-    // ball physically rests ON TOP of the slab annulus instead of clipping
-    // through the inner hole. Fixes the "ball embedded in slab" visual.
-    const innerRadius = Math.max(0.40, poleRadius + poleGap);
+    // Inner radius 0.30 — smaller than ball radius 0.40 so the ball rests on
+    // top of the annulus. Tightened together with smaller OUTER_R for ref match.
+    const innerRadius = Math.max(0.30, poleRadius + poleGap);
     const totalSpots = PENTAGON_SIDES * spotsPerSide;
 
     // Persistent per-level danger column (passed down from Tower).
@@ -195,11 +194,45 @@ export default class Slab {
           yPosition,
           spotIndex,
         };
+        // Each spot's local angle (in the slab's pre-rotation frame). Used by
+        // update() to enable ONLY the spot currently at world +Z (camera front)
+        // for collision — fixes the multi-spot-collide-at-axis bug.
+        const spotLocalAngle =
+          rotationOffset - Math.PI / 2 + (2 * spotIndex + 1) * Math.PI / (2 * totalSpots);
+
         this.world.addBody(body);
 
-        this.pieces.push({ mesh, body, color });
+        this.pieces.push({ mesh, body, color, spotLocalAngle });
         spotIndex++;
       }
+    }
+  }
+
+  // Per-frame: of all 20 spots, only the one whose world-angle is closest to
+  // the camera-front (world +Z = π/2) gets collisionFilterMask = -1 (collidable).
+  // All others get mask 0 (non-collidable). The ball at the axis only ever
+  // contacts ONE spot at a time → unambiguous soft-vs-hard read for each layer.
+  updateActiveSpot(towerWorldRotationY) {
+    if (this.isBroken) return;
+    const TAU = Math.PI * 2;
+    const target = Math.PI / 2;
+    let bestIdx = 0;
+    let bestDelta = Infinity;
+    for (let i = 0; i < this.pieces.length; i++) {
+      const p = this.pieces[i];
+      // Three.js: point at local angle θ ends up at world angle θ - rotation.y
+      const worldAngle = ((p.spotLocalAngle - towerWorldRotationY) % TAU + TAU) % TAU;
+      let delta = Math.abs(worldAngle - target);
+      if (delta > Math.PI) delta = TAU - delta;
+      if (delta < bestDelta) {
+        bestDelta = delta;
+        bestIdx = i;
+      }
+    }
+    for (let i = 0; i < this.pieces.length; i++) {
+      const p = this.pieces[i];
+      if (!p.body) continue;
+      p.body.collisionFilterMask = i === bestIdx ? -1 : 0;
     }
   }
 

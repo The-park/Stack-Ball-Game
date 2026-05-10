@@ -46,11 +46,12 @@ class Renderer {
 		this.scene.fog = new THREE.Fog(0xE8E2F2, 12, 38);
 
 		const aspect = window.innerWidth / window.innerHeight;
-		// Telephoto-ish FOV 38° + slightly further camera matches reference's
-		// "tower receding into distance" composition.
-		this.camera = new THREE.PerspectiveCamera(38, aspect, 0.1, 300);
-		this.camera.position.set(0, 1.0, 10.5);
-		this.camera.lookAt(0, -0.6, 0);
+		// Pull camera back (z 6.3 → 10) and lower lookAt (0 → -1.5) so MORE of the
+		// tower extends below the ball — matches reference's tall-column composition.
+		// Pitch ≈ atan(2.5+1.5/10) = ~22° downward (still slanted; user can see top face).
+		this.camera = new THREE.PerspectiveCamera(34, aspect, 0.1, 300);
+		this.camera.position.set(0, 2.5, 10);
+		this.camera.lookAt(0, -1.5, 0);
 
 		this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 		this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -70,7 +71,7 @@ class Renderer {
 		this._lookY = 0;
 		this.shakeIntensity = 0;
 		this._cameraBaseX = 0;
-		this._cameraBaseY = 1.0;
+		this._cameraBaseY = 2.5;
 
 		this._setupLights();
 		this._setupEnvironment();
@@ -200,8 +201,8 @@ class Renderer {
 
 	setupCamera(ballMesh) {
 		this._ballMesh = ballMesh;
-		this.camera.position.set(0, 1.0, 10.5);
-		this.camera.lookAt(0, -0.6, 0);
+		this.camera.position.set(0, 2.5, 10);
+		this.camera.lookAt(0, -1.5, 0);
 	}
 
 	updateCamera(dt) {
@@ -209,15 +210,17 @@ class Renderer {
 			return;
 		}
 
-		// dy = 1.2, dz = 10.5 → atan(1.2/10.5) ≈ 6.5° down. Near-horizontal.
-		const targetY = this._ballMesh.position.y + 0.6;
-		const lookY = this._ballMesh.position.y - 0.6;
+		// camera follows ball: y +2.5 above, looks at y -1.5 below.
+		// Pitch atan((2.5-(-1.5))/10) ≈ 22° down — slab top still visible,
+		// but tower extends ~5 units below ball (~12 slabs at 0.40 spacing).
+		const targetY = this._ballMesh.position.y + 2.5;
+		const lookY = this._ballMesh.position.y - 1.5;
 
 		this._cameraBaseY += (targetY - this._cameraBaseY) * 0.08;
 		this._cameraBaseX = 0;
 		this.camera.position.x = this._cameraBaseX;
 		this.camera.position.y = this._cameraBaseY;
-		this.camera.position.z = 10.5;
+		this.camera.position.z = 10;
 
 		this._lookY = this._lookY ?? 0;
 		this._lookY += (lookY - this._lookY) * 0.075;
@@ -225,7 +228,9 @@ class Renderer {
 	}
 
 	triggerShake(intensity) {
-		this.shakeIntensity = Math.max(this.shakeIntensity, intensity);
+		// Hard-capped at 0.10 — anything more reads as earthquake on phone screens.
+		// Reference Stack Ball uses ZERO shake; this is a tiny nudge only.
+		this.shakeIntensity = Math.min(0.10, Math.max(this.shakeIntensity, intensity));
 	}
 
 	render() {
@@ -235,7 +240,7 @@ class Renderer {
 			const offsetY = (Math.random() - 0.5) * amount;
 			this.camera.position.x = this._cameraBaseX + offsetX;
 			this.camera.position.y = this._cameraBaseY + offsetY;
-			this.shakeIntensity *= 0.86;
+			this.shakeIntensity *= 0.72;  // faster fade — shake clears in ~8 frames, not 25
 		} else {
 			this.shakeIntensity = 0;
 			this.camera.position.x = this._cameraBaseX;

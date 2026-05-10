@@ -39,6 +39,7 @@ class GameManager {
 
 		this._levelStartedAt = 0;
 		this._levelStats = this._freshLevelStats();
+		this._lastHardHitAt = 0;
 
 		this._sequenceRunning = false;
 		this._sequenceCancelled = false;
@@ -125,13 +126,21 @@ class GameManager {
 	onHardHit(slabUserData) {
 		if (this.state !== GameState.PLAYING) return;
 		void slabUserData;
+
+		// Throttle — stuck-state recovery can fire 3 hard hits in <200ms,
+		// stacking shakes into an earthquake. One feedback event per 180ms max.
+		const now = performance.now();
+		if (now - (this._lastHardHitAt || 0) < 180) return;
+		this._lastHardHitAt = now;
+
 		this._comboCount = 0;
 		this._comboMultiplier = 1;
 		this._lastSoftHitAt = 0;
 		this._levelStats.hardHits += 1;
 		this._hardHitsThisLevel += 1;
 		this.audioManager?.play('bounce');
-		this.renderer?.triggerShake?.(0.28);
+		// Tiny nudge — primary feedback is now hud.flashDanger() (the pink pulse).
+		this.renderer?.triggerShake?.(0.05);
 		this.hud.flashDanger?.();
 		this.score = Math.max(0, this.score - 3);
 		this.hud.updateProgress(this.tower.slabsBroken, this.tower.totalSlabs, this.score);
@@ -148,7 +157,7 @@ class GameManager {
 		// Duck BGM so the death SFX and game-over modal read clearly.
 		this.audioManager?.duckBGM?.(0.35, 400, 1200);
 		this.audioManager?.play('death');
-		this.renderer?.triggerShake?.(0.55);
+		this.renderer?.triggerShake?.(0.10);  // capped — modal + duck carry the moment
 		this.ball.die?.();
 		this.hud.showGameOver?.(this.score);
 	}
@@ -503,7 +512,9 @@ class GameManager {
 		let bestIdx = 0;
 		let bestDelta = Infinity;
 		for (let i = 0; i < wedgeCount; i++) {
-			const c = ((-((i + 0.5) * arc) + rotationY) % TAU + TAU) % TAU;
+			// Wedge local angle is -(i+0.5)*arc due to wedge.rotation.x = -π/2 flip.
+			// World angle = local - rotation.y.
+			const c = ((-((i + 0.5) * arc) - rotationY) % TAU + TAU) % TAU;
 			let d = Math.abs(c - target);
 			if (d > Math.PI) d = TAU - d;
 			if (d < bestDelta) { bestDelta = d; bestIdx = i; }

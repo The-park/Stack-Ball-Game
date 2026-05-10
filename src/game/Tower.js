@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import Slab, { getLevelTheme } from './Slab.js';
 
-const SLAB_SPACING = 0.55;  // Slabs are 0.42 thick — leaves a 0.13 gap so layers read as discrete.
+const SLAB_SPACING = 0.40;  // Tight stacking for tall thin column, slabs 0.30 thick.
 
 export function getLevelConfig(levelNumber) {
   const level = Math.max(1, Math.min(levelNumber, 10));
@@ -10,14 +10,13 @@ export function getLevelConfig(levelNumber) {
   const dangerWidth = Math.min(11, 5 + Math.floor(level * 0.6));
 
   return {
-    // Tighter spacing (0.50) means we need more slabs/level for the tower to
-    // fill the frame; reference shows ~16-22 slabs/level across difficulty.
-    slabCount: 18 + level * 2,
+    // Many more slabs at tight spacing — matches reference's "thin disc stack" silhouette.
+    slabCount: 28 + level * 2,
     rotationSpeed: 0,
     spotsPerSide: 4,
     dangerWidth,
-    poleRadius: 0.22,
-    poleGap: 0.18,
+    poleRadius: 0.16,
+    poleGap: 0.14,
     levelTheme: getLevelTheme(level),
   };
 }
@@ -75,20 +74,25 @@ export default class Tower {
     // Background re-skin: tell the renderer about the per-level sky/ground tones.
     this.currentTheme = config.levelTheme;
 
-    // Rotate the WHOLE tower so the danger arc's center faces the BACK
-    // (-Z direction, away from camera). Player sees the safe arc on first paint;
-    // they can still rotate freely to align subsequent layers.
-    // Spot i center angle (in tower-local frame, with rotationOffset=0) =
-    //   -π/2 + (2i+1) * π / (2*totalSpots)
-    // Want danger-center spot's WORLD angle = -π/2 (back of tower).
+    // Rotate the tower so the danger arc's center faces the BACK
+    // (-Z direction = behind the tower from camera at +Z).
+    // Three.js Y-rotation: a point at local angle θ ends up at world angle
+    // θ - rotation.y. So to map dangerCenterTowerAngle → world -π/2:
+    //   dangerCenterTowerAngle - rotation.y = -π/2
+    //   rotation.y = dangerCenterTowerAngle + π/2
     const dangerCenterIdx = sharedConfig.dangerStart + (dangerWidth - 1) / 2;
     const spotAngleStep = (2 * Math.PI) / totalSpots;
     const dangerCenterTowerAngle = -Math.PI / 2 + (dangerCenterIdx + 0.5) * spotAngleStep;
-    this.towerGroup.rotation.y = -Math.PI / 2 - dangerCenterTowerAngle;
+    this.towerGroup.rotation.y = dangerCenterTowerAngle + Math.PI / 2;
 
-    // Force initial alignment of physics bodies to the (possibly rotated) tower.
+    // Force initial alignment of physics bodies + active-spot mask BEFORE the
+    // first physics step (otherwise all 20 spots collide on frame 1, ball can
+    // hit a hard spot purely by chance and rack up multiple penalties).
     this.towerGroup.updateMatrixWorld(true);
-    for (const slab of this.slabs) slab.syncBodiesToTower();
+    for (const slab of this.slabs) {
+      slab.syncBodiesToTower();
+      slab.updateActiveSpot?.(this.towerGroup.rotation.y);
+    }
   }
 
   update(dt, inputRotationDelta, ballY = 0) {
@@ -104,6 +108,7 @@ export default class Tower {
     const SYNC_AHEAD = 4.0;
     const SYNC_BEHIND = 2.0;
 
+    const groupRotY = this.towerGroup.rotation.y;
     for (const slab of this.slabs) {
       if (needsSync) {
         const dy = slab.yPosition - ballY;
@@ -111,6 +116,9 @@ export default class Tower {
           slab.syncBodiesToTower();
         }
       }
+      // Always recompute which spot is "front" so as the tower rotates the
+      // collidable spot moves with it. Cheap: 20 angle compares per slab.
+      slab.updateActiveSpot?.(groupRotY);
       slab.animateDebris(dt);
     }
   }

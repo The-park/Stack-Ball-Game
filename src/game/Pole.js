@@ -6,7 +6,7 @@ class Pole {
 	constructor(scene, _physics) {
 		void _physics;
 		this.scene = scene;
-		const poleRadius = 0.22;
+		const poleRadius = 0.16;  // Slimmer pole to match smaller tower scale
 
 		// Short cylinder — height is dynamically rescaled to track the ball so
 		// the pole only ever appears ABOVE the ball (no visible stub below ball).
@@ -23,8 +23,8 @@ class Pole {
 		this.mesh = new THREE.Mesh(geometry, material);
 		this.mesh.castShadow = false;
 		this.mesh.receiveShadow = false;
-		// Default placement at game start (ball at ~0.72) — extends from ~0.7 up.
-		this.mesh.position.set(0, 0.72 + POLE_BASE_HEIGHT * 0.5, 0);
+		// Default placement at game start (ball at ~0.55) — extends from ~0.55 up.
+		this.mesh.position.set(0, 0.55 + POLE_BASE_HEIGHT * 0.5, 0);
 		this.scene.add(this.mesh);
 
 		// Halo removed — reference pole has none, and the additive pink ring was
@@ -39,7 +39,7 @@ class Pole {
 		// units above ball-top.
 		void _dt;
 		if (!this.mesh) return;
-		const bottom = ballY - 0.5;            // bottom of ball
+		const bottom = ballY - 0.4;            // bottom of ball (radius 0.40)
 		const top = ballY + POLE_BASE_HEIGHT;  // visual extent above ball
 		this.mesh.position.y = (top + bottom) * 0.5;
 		this.mesh.scale.y = (top - bottom) / POLE_BASE_HEIGHT;

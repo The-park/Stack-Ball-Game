@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 
-const BALL_RADIUS = 0.50;
-const BALL_START_Y = 0.72;
+// Smaller ball + smaller tower (OUTER_R 1.7) keeps ball:tower ratio at ~24%
+// matching reference (was 19% with ball=0.5 vs OUTER_R=2.6).
+const BALL_RADIUS = 0.40;
+const BALL_START_Y = 0.55;
 // Bounce parameters re-tuned for gravity 22 m/s² (was 35). Apex height
 // vOut²/(2g) — at vOut = 7 m/s, apex = 49/44 ≈ 1.11 m: comfortable readable arc.
 const BOUNCE_MAX_HEIGHT = 2.6;
@@ -137,14 +139,14 @@ class Ball {
 				} else {
 					this._markRecent(`body:${other.id}`, HIT_DEDUPE_MS);
 					this._queueBounce(this._computeBounceSpeed(this.body.position.y, this._preImpactVelY, false));
-					this._squashTimer = 0.18 + Math.min(0.12, Math.abs(this._preImpactVelY) * 0.012);
+					this._squashTimer = 0.10;
 				}
 			} else if (ud.type === 'hard_slab') {
 				this._markRecent(`body:${other.id}`, HIT_DEDUPE_MS);
 				if (slabKey) this._markRecent(slabKey, HIT_DEDUPE_MS);
 				this._hardContactLockUntil = now + HARD_LOCK_MS;
 				this._queueBounce(this._computeBounceSpeed(this.body.position.y, this._preImpactVelY, true));
-				this._squashTimer = 0.16 + Math.min(0.18, Math.abs(this._preImpactVelY) * 0.014);
+				this._squashTimer = 0.12;
 				import('./GameManager.js').then((m) => {
 					m.GameManager.instance?.onHardHit(ud);
 				});
@@ -448,51 +450,29 @@ class Ball {
 	}
 
 	_updateAnimation(dt) {
-		const velY = this._smoothedVelY;
-		this._fallSpeed = velY;
 		this._stateTimer += dt;
-		this._idlePhase += dt * (2.1 + Math.min(6, Math.abs(velY)) * 0.12);
-		// Rotate the mesh itself — Sprite-only `material.rotation` no longer applies.
+		// Subtle continuous Y-rotation — the only "alive" animation. No idle pulse,
+		// no velocity-stretch, no falling-streak: the reference ball stays a clean
+		// sphere at all times.
+		const velY = this._smoothedVelY;
 		this.mesh.rotation.y += dt * (0.95 + Math.min(8, Math.abs(velY)) * 0.08);
 
+		// One-shot squash on impact only. Brief and gentle — 0.18 max wide, 0.15 max short.
 		if (this._squashTimer > 0) {
 			this._squashTimer -= dt;
-			const t = 1.0 - (this._squashTimer / 0.25);
-			const ease = Math.sin(t * Math.PI);
-			const scaleXZ = 1 + 0.55 * ease;
-			const scaleY = 1 - 0.45 * ease;
+			const t = 1.0 - (this._squashTimer / 0.12);
+			const ease = Math.sin(Math.max(0, Math.min(1, t)) * Math.PI);
+			const scaleXZ = 1 + 0.18 * ease;
+			const scaleY = 1 - 0.15 * ease;
 			this._applyScale(scaleXZ, scaleY);
 			this.mesh.position.y = this._visualY;
 			this._state = 'squash';
 			return;
 		}
 
-		// Reduced stretch magnitude — ball stays near-spherical, matching the
-		// reference's perfectly round ball even during fast falls.
-		if (velY < -6) {
-			const stretch = Math.min((-velY - 6) / 8, 1.0);
-			const scaleXZ = 1 - stretch * 0.10;
-			const scaleY = 1 + stretch * 0.18;
-			this._applyScale(scaleXZ, scaleY);
-			this.mesh.position.y = this._visualY;
-			this._state = 'falling';
-			this._spawnTrailParticle();
-			return;
-		}
-
-		if (velY > 2.5) {
-			const stretch = Math.min((velY - 2.5) / 6, 1.0);
-			const scaleXZ = 1 - stretch * 0.05;
-			const scaleY = 1 + stretch * 0.10;
-			this._applyScale(scaleXZ, scaleY);
-			this.mesh.position.y = this._visualY + Math.sin(this._idlePhase * 0.8) * 0.01;
-			this._state = 'bounce';
-			return;
-		}
-
-		const pulse = 1 + Math.sin(performance.now() * 0.003) * 0.025;
-		this._applyScale(pulse, pulse);
-		this.mesh.position.y = this._visualY + Math.sin(this._idlePhase) * 0.018;
+		// Default: perfect sphere, no bob. Matches reference frame-by-frame.
+		this._applyScale(1, 1);
+		this.mesh.position.y = this._visualY;
 		this._state = 'idle';
 	}
 

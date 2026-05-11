@@ -212,17 +212,33 @@ export default class Slab {
     const target = Math.PI / 2;
     let bestIdx = 0;
     let bestDelta = Infinity;
+    const deltas = new Array(this.pieces.length);
     for (let i = 0; i < this.pieces.length; i++) {
       const p = this.pieces[i];
-      // Three.js: point at local angle θ ends up at world angle θ - rotation.y
       const worldAngle = ((p.spotLocalAngle - towerWorldRotationY) % TAU + TAU) % TAU;
       let delta = Math.abs(worldAngle - target);
       if (delta > Math.PI) delta = TAU - delta;
+      deltas[i] = delta;
       if (delta < bestDelta) {
         bestDelta = delta;
         bestIdx = i;
       }
     }
+
+    // HYSTERESIS: don't flip the active spot unless the new candidate beats
+    // the CURRENT active spot by a margin (1/3 of a spot's angular width).
+    // Without this, floating-point jitter at the boundary swaps soft/hard
+    // back-and-forth under a resting ball, causing false hard-hits.
+    const lastIdx = this._lastActiveIdx;
+    if (lastIdx !== undefined && lastIdx !== bestIdx && deltas[lastIdx] !== undefined) {
+      const spotAngle = TAU / this.pieces.length;
+      const HYSTERESIS = spotAngle * 0.34;
+      if (deltas[lastIdx] - bestDelta < HYSTERESIS) {
+        bestIdx = lastIdx;  // keep the previous active spot
+      }
+    }
+    this._lastActiveIdx = bestIdx;
+
     for (let i = 0; i < this.pieces.length; i++) {
       const p = this.pieces[i];
       if (!p.body) continue;

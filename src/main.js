@@ -129,9 +129,15 @@ async function init() {
 		hud.setBreakMode?.(gm.state === GameState.PLAYING && input.isPressing);
 
 		if (gm.state === GameState.PLAYING) {
+			// CRITICAL ORDER: rotate tower + sync slab bodies + update active-spot
+			// masks BEFORE physics.step. Otherwise cannon-es consumes last-frame's
+			// masks and body positions — meaning a player rotation this frame is
+			// not seen by the contact resolver until next frame, producing
+			// soft/hard misreports.
+			tower.breakInputActive = input.isPressing;  // suspend auto-rotation during hold
+			tower.update(dt, input.rotation, ball.body.position.y);
 			physics.step(dt);
 			ball.update(dt);
-			tower.update(dt, input.rotation, ball.body.position.y);
 			gm.tick?.();
 		} else if (gm.state === GameState.WIN) {
 			tower.update(dt, 0, ball.body.position.y);

@@ -44,43 +44,28 @@ function lerp2(a, b, t) {
   );
 }
 
-function buildSpotMesh(oA, oB, iB, iA, color) {
-  const h = THICKNESS * 0.5;
-  const vertices = [
-    [oA.x, h, oA.y],
-    [oB.x, h, oB.y],
-    [iB.x, h, iB.y],
-    [iA.x, h, iA.y],
-    [oA.x, -h, oA.y],
-    [oB.x, -h, oB.y],
-    [iB.x, -h, iB.y],
-    [iA.x, -h, iA.y],
-  ];
+const CURVE_SEGMENTS = 4; // arc samples per spot — bump to 6 if visible faceting
 
-  const positions = [];
-  for (const v of vertices) positions.push(v[0], v[1], v[2]);
+// Smooth annular-sector slab spot: outer + inner arcs (curved), top/bottom caps,
+// straight end-walls. Replaces the old pentagon-wedge quad strip.
+function buildSpotMesh(angleStart, angleEnd, innerRadius, outerRadius, thickness, color) {
+  const shape = new THREE.Shape();
+  shape.moveTo(outerRadius * Math.cos(angleStart), outerRadius * Math.sin(angleStart));
+  shape.absarc(0, 0, outerRadius, angleStart, angleEnd, false);  // CCW outer
+  shape.lineTo(innerRadius * Math.cos(angleEnd), innerRadius * Math.sin(angleEnd));
+  shape.absarc(0, 0, innerRadius, angleEnd, angleStart, true);   // CW inner
+  shape.lineTo(outerRadius * Math.cos(angleStart), outerRadius * Math.sin(angleStart));
 
-  const indices = [
-    // top
-    0, 1, 2,
-    0, 2, 3,
-    // bottom
-    4, 6, 5,
-    4, 7, 6,
-    // sides
-    0, 4, 5,
-    0, 5, 1,
-    1, 5, 6,
-    1, 6, 2,
-    2, 6, 7,
-    2, 7, 3,
-    3, 7, 4,
-    3, 4, 0,
-  ];
-
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geo.setIndex(indices);
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth: thickness,
+    bevelEnabled: false,
+    curveSegments: CURVE_SEGMENTS,
+    steps: 1,
+  });
+  // ExtrudeGeometry extrudes along +Z. Rotate so depth becomes vertical (+Y).
+  geo.rotateX(-Math.PI / 2);
+  // After rotation the geometry sits at [y = -thickness, y = 0]. Re-center vertically.
+  geo.translate(0, thickness * 0.5, 0);
   geo.computeVertexNormals();
 
   const isHard = color === HARD_COLOR;
@@ -92,7 +77,7 @@ function buildSpotMesh(oA, oB, iB, iA, color) {
     emissive: isHard ? 0x000000 : colorObj.clone().multiplyScalar(0.06),
     emissiveIntensity: isHard ? 0.0 : 0.05,
     envMapIntensity: 0.45,
-    flatShading: true,
+    flatShading: false,  // smooth shading — outer & inner walls are now curved
   });
 
   return new THREE.Mesh(geo, mat);
@@ -149,56 +134,45 @@ export default class Slab {
     // through every slab — crucial for the "vertical danger band" gameplay read.
     const rotationOffset = config?.levelRotationOffset ?? 0;
 
-    const outerVerts = createPentagonVertices(OUTER_R, rotationOffset);
-    const innerVerts = createPentagonVertices(innerRadius, rotationOffset);
+    // Single loop over all spots. Geometry is smooth annular sectors now;
+    // we still feed the same 4 corner points to _buildSpotBody for the
+    // CANNON.Box collision shape (unchanged physics, smooth visuals).
+    const spotAngleStep = (Math.PI * 2) / totalSpots;
+    const baseAngle = rotationOffset - Math.PI / 2;
 
-    let spotIndex = 0;
-    for (let side = 0; side < PENTAGON_SIDES; side++) {
-      const next = (side + 1) % PENTAGON_SIDES;
-      const oA = outerVerts[side];
-      const oB = outerVerts[next];
-      const iA = innerVerts[side];
-      const iB = innerVerts[next];
+    for (let spotIndex = 0; spotIndex < totalSpots; spotIndex++) {
+      const a0 = baseAngle + spotIndex * spotAngleStep;
+      const a1 = a0 + spotAngleStep;
 
-      for (let s = 0; s < spotsPerSide; s++) {
-        const t0 = s / spotsPerSide;
-        const t1 = (s + 1) / spotsPerSide;
+      const isSoft = softMask[spotIndex];
+      const softShade = ((colorIndex + spotIndex) & 1) === 0 ? this.softPrimary : this.softSecondary;
+      const color = isSoft ? softShade : HARD_COLOR;
+      const material = isSoft ? this.physics.softSlabMaterial : this.physics.hardSlabMaterial;
 
-        const soA = lerp2(oA, oB, t0);
-        const soB = lerp2(oA, oB, t1);
-        const siA = lerp2(iA, iB, t0);
-        const siB = lerp2(iA, iB, t1);
+      // Smooth circular sector mesh — replaces pentagon wedge.
+      const mesh = buildSpotMesh(a0, a1, innerRadius, OUTER_R, THICKNESS, color);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.position.y = yPosition;
+      this.towerGroup.add(mesh);
 
-        const isSoft = softMask[spotIndex];
-        // Alternate primary/secondary so adjacent slabs read as layered.
-        const softShade = ((colorIndex + spotIndex) & 1) === 0 ? this.softPrimary : this.softSecondary;
-        const color = isSoft ? softShade : HARD_COLOR;
-        const material = isSoft ? this.physics.softSlabMaterial : this.physics.hardSlabMaterial;
+      // Reconstruct the 4 corner points _buildSpotBody expects (unchanged physics).
+      const oA = new THREE.Vector2(Math.cos(a0) * OUTER_R, Math.sin(a0) * OUTER_R);
+      const oB = new THREE.Vector2(Math.cos(a1) * OUTER_R, Math.sin(a1) * OUTER_R);
+      const iA = new THREE.Vector2(Math.cos(a0) * innerRadius, Math.sin(a0) * innerRadius);
+      const iB = new THREE.Vector2(Math.cos(a1) * innerRadius, Math.sin(a1) * innerRadius);
+      const body = this._buildSpotBody(oA, oB, iA, iB, material);
+      body.userData = {
+        type: isSoft ? 'soft_slab' : 'hard_slab',
+        slab: this,
+        yPosition,
+        spotIndex,
+      };
+      // Centroid angle (used by active-spot picker).
+      const spotLocalAngle = a0 + spotAngleStep * 0.5;
+      this.world.addBody(body);
 
-        const mesh = buildSpotMesh(soA, soB, siB, siA, color);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
-        mesh.position.y = yPosition;
-        this.towerGroup.add(mesh);
-
-        const body = this._buildSpotBody(soA, soB, siA, siB, material);
-        body.userData = {
-          type: isSoft ? 'soft_slab' : 'hard_slab',
-          slab: this,
-          yPosition,
-          spotIndex,
-        };
-        // Each spot's local angle (in the slab's pre-rotation frame). Used by
-        // update() to enable ONLY the spot currently at world +Z (camera front)
-        // for collision — fixes the multi-spot-collide-at-axis bug.
-        const spotLocalAngle =
-          rotationOffset - Math.PI / 2 + (2 * spotIndex + 1) * Math.PI / (2 * totalSpots);
-
-        this.world.addBody(body);
-
-        this.pieces.push({ mesh, body, color, spotLocalAngle });
-        spotIndex++;
-      }
+      this.pieces.push({ mesh, body, color, spotLocalAngle });
     }
   }
 
@@ -225,16 +199,21 @@ export default class Slab {
       }
     }
 
-    // HYSTERESIS: don't flip the active spot unless the new candidate beats
-    // the CURRENT active spot by a margin (1/3 of a spot's angular width).
-    // Without this, floating-point jitter at the boundary swaps soft/hard
-    // back-and-forth under a resting ball, causing false hard-hits.
+    // Anti-jitter band ONLY: at exact spot boundaries, floating-point round-off
+    // could flip the best-spot index back-and-forth between two adjacent spots
+    // whose `delta` values agree to within a tiny epsilon. We hold the previous
+    // active spot if the two deltas are within ~0.015 rad (~0.86°) of each
+    // other — this kills micro-jitter without introducing perceptible lag.
+    //
+    // Previous implementation used 0.34 * spotAngle = ~6° margin, which let
+    // the active (collidable) spot lag the visually-front spot by up to a
+    // full 18° spot width — causing the user-reported "ball on black breaks
+    // as soft" bug. The new band is 7× smaller than that lag was.
     const lastIdx = this._lastActiveIdx;
     if (lastIdx !== undefined && lastIdx !== bestIdx && deltas[lastIdx] !== undefined) {
-      const spotAngle = TAU / this.pieces.length;
-      const HYSTERESIS = spotAngle * 0.34;
-      if (deltas[lastIdx] - bestDelta < HYSTERESIS) {
-        bestIdx = lastIdx;  // keep the previous active spot
+      const EPSILON = 0.015;  // ≈ 0.86° — only catches exact-boundary float jitter
+      if (deltas[lastIdx] - bestDelta < EPSILON) {
+        bestIdx = lastIdx;
       }
     }
     this._lastActiveIdx = bestIdx;

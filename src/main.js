@@ -53,6 +53,7 @@ async function init() {
 	const pole = new Pole(renderer.scene3D, physics);
 	const tower = new Tower(renderer.scene3D, physics.world, physics);
 	const ball = new Ball(renderer.scene3D, physics, 1);
+	ball._particles = particles;  // Allow ball to fire its own per-hit bursts (e.g., red on hard hit).
 	const hud = new HUD(uiDiv);
 	tower.particleSystem = particles;
 

@@ -44,15 +44,17 @@ class ParticleSystem {
 
 		this._softTexture = makeSoftParticleTexture();
 
+		// Research-recommended: NormalBlending (was Additive) + smaller, lower opacity
+		// so the break burst doesn't haze out the slab it's coming from.
 		this.material = new THREE.PointsMaterial({
-			size: 0.18,
+			size: 0.10,
 			map: this._softTexture,
 			vertexColors: true,
 			transparent: true,
-			opacity: 0.95,
+			opacity: 0.65,
 			depthWrite: false,
 			sizeAttenuation: true,
-			blending: THREE.AdditiveBlending
+			blending: THREE.NormalBlending
 		});
 
 		this.points = new THREE.Points(this.geometry, this.material);

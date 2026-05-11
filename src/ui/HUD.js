@@ -179,7 +179,7 @@ class HUD {
         font-family:"Bricolage Grotesque","Outfit",sans-serif;
         font-size:clamp(40px,9vw,76px);
         font-weight:900;letter-spacing:-1px;line-height:0.9;
-        -webkit-text-stroke:3px #2A2D34;
+        -webkit-text-stroke:4px #1F2733;
         paint-order:stroke fill;
         text-shadow:0 4px 10px rgba(0,0,0,0.30), 0 0 2px rgba(0,0,0,0.55);
         transition:transform 0.12s ease-out;
@@ -366,7 +366,7 @@ class HUD {
           top:calc(max(14px,env(safe-area-inset-top,0px)) + 46px);
           transform:translateX(-50%);
         }
-        .sbp-score-value{font-size:clamp(34px,8vw,64px); -webkit-text-stroke:2.5px #2A2D34;}
+        .sbp-score-value{font-size:clamp(34px,8vw,64px); -webkit-text-stroke:3.5px #1F2733;}
       }
     `;
 

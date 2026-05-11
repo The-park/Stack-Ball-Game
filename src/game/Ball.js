@@ -1,15 +1,13 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 
-// Smaller ball + smaller tower (OUTER_R 1.7) keeps ball:tower ratio at ~24%
-// matching reference (was 19% with ball=0.5 vs OUTER_R=2.6).
 const BALL_RADIUS = 0.40;
 const BALL_START_Y = 0.55;
-// Bounce parameters re-tuned for gravity 22 m/s² (was 35). Apex height
-// vOut²/(2g) — at vOut = 7 m/s, apex = 49/44 ≈ 1.11 m: comfortable readable arc.
-const BOUNCE_MAX_HEIGHT = 2.6;
-const BOUNCE_MIN_SPEED = 6.6;
-const BOUNCE_MAX_SPEED = 12.5;
+// Research-cap bounce energy so the ball stays in low rhythmic arcs (ref shows
+// short hops between layers, not big punts).
+const BOUNCE_MAX_HEIGHT = 1.4;
+const BOUNCE_MIN_SPEED = 5.0;
+const BOUNCE_MAX_SPEED = 8.5;
 
 const HIT_DEDUPE_MS = 180;          // unified dedupe window for any hit type
 const HARD_LOCK_MS = 220;           // hard contact disables soft-break briefly
@@ -25,19 +23,17 @@ class Ball {
 		this._visualZOffset = 0;
 		this._baseScale = 1.0;
 
-		// 3D shaded sphere — Physical material with a clearcoat so the ball gets
-		// a clean glossy specular highlight from the directional light (matches
-		// the reference ball's plastic/glossy look).
+		// Research-recommended cobalt ball + glossier clearcoat (was sky-blue).
 		const ballGeo = new THREE.SphereGeometry(BALL_RADIUS, 32, 24);
 		const ballMat = new THREE.MeshPhysicalMaterial({
-			color: 0x3A78FF,
-			roughness: 0.46,
+			color: 0x1E5BD8,
+			roughness: 0.42,
 			metalness: 0.0,
-			emissive: 0x1A3FAA,
+			emissive: 0x0B2080,
 			emissiveIntensity: 0.06,
 			envMapIntensity: 0.22,
-			clearcoat: 0.65,
-			clearcoatRoughness: 0.18
+			clearcoat: 0.85,
+			clearcoatRoughness: 0.08
 		});
 		this.mesh = new THREE.Mesh(ballGeo, ballMat);
 		this.mesh.castShadow = true;
@@ -46,7 +42,7 @@ class Ball {
 		this.mesh.scale.setScalar(this._baseScale);
 		this._visualY = BALL_START_Y;
 		this._smoothedVelY = 0;
-		this._baseSpriteColor = new THREE.Color(0x3A78FF);
+		this._baseSpriteColor = new THREE.Color(0x1E5BD8);
 		this._landingTintColor = this._baseSpriteColor.clone();
 		this._landingTintTimer = 0;
 		scene.add(this.mesh);

@@ -6,7 +6,7 @@ import * as CANNON from 'cannon-es';
 // commercial reference. Each theme has a primary and a slightly-shifted secondary
 // so adjacent slabs alternate for layered depth.
 const LEVEL_THEMES = [
-  { primary: 0xFFD200, secondary: 0xFFB800, sky: 0xB892FF, ground: 0xF5E1FF },  // 1 — saturated yellow on lavender
+  { primary: 0xFFD200, secondary: 0xFFB800, sky: 0x3A1F6F, ground: 0xD55A3A },  // 1 — yellow on purple→orange (research §6)
   { primary: 0xFF5C5C, secondary: 0xFF3838, sky: 0xFFD27F, ground: 0xFFE9C9 },  // 2 — red on amber
   { primary: 0x4FC3F7, secondary: 0x29B6F6, sky: 0xFFB199, ground: 0xFFE0D2 },  // 3 — sky-blue on coral
   { primary: 0x66BB6A, secondary: 0x4CAF50, sky: 0xC4A4FF, ground: 0xEFE3FF },  // 4 — green on lavender
@@ -23,11 +23,10 @@ export function getLevelTheme(levelNumber) {
   return LEVEL_THEMES[idx];
 }
 
-const HARD_COLOR = 0x2A2D34;  // Charcoal — high contrast but visible edge highlights
+const HARD_COLOR = 0x0A0A0A;  // True black — research-recommended max contrast vs theme color
 const PENTAGON_SIDES = 5;
-// Slimmer slabs + smaller tower = denser stack (~28 slabs visible) matching
-// the reference's tall thin column rather than chunky few-layer pillar.
-const THICKNESS = 0.30;
+// Research-recommended: thin disc stack (thickness 0.18, spacing 0.22, ~40+L*3 slabs).
+const THICKNESS = 0.18;
 const OUTER_R = 1.70;
 
 function createPentagonVertices(radius, rotationOffset) {
@@ -89,14 +88,11 @@ function buildSpotMesh(oA, oB, iB, iA, color) {
   const colorObj = new THREE.Color(color);
   const mat = new THREE.MeshStandardMaterial({
     color,
-    roughness: isHard ? 0.78 : 0.50,
+    roughness: isHard ? 0.55 : 0.50,
     metalness: isHard ? 0.0 : 0.02,
-    emissive: isHard ? 0x150b13 : colorObj.clone().multiplyScalar(0.06),
-    emissiveIntensity: isHard ? 0.02 : 0.05,
+    emissive: isHard ? 0x000000 : colorObj.clone().multiplyScalar(0.06),
+    emissiveIntensity: isHard ? 0.0 : 0.05,
     envMapIntensity: 0.45,
-    // FLAT shading — eliminates the "sunburst" pattern smooth-shading produced
-    // by averaging top-face and side-face normals at the shared corner verts.
-    // Each face now reads with a clean uniform tone, matching reference's flat-shaded look.
     flatShading: true,
   });
 
@@ -334,7 +330,7 @@ export default class Slab {
 
     if (particleSystem) {
       const burstPos = new THREE.Vector3(0, this.yPosition, 0);
-      particleSystem.burst(burstPos, new THREE.Color(this.softColor), 25);
+      particleSystem.burst(burstPos, new THREE.Color(this.softColor), 8);
     }
   }
 

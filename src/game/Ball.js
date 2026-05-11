@@ -105,6 +105,16 @@ class Ball {
 			if (!ud || !ud.type) return;
 			if (ud.type !== 'soft_slab' && ud.type !== 'hard_slab') return;
 
+			// Dedupe FIRST — cycle 18 fix. Previously _emitLandingHint ran before
+			// this check, so a deduped hard event still flashed "DANGER" on the
+			// HUD while the prior soft tint (450 ms timer) was visible. Moving
+			// the gate ahead of hint emission ensures the pill only changes
+			// when an event is actually going to be processed.
+			const slabKey = ud.slab ? `slab:${ud.slab.uid}` : null;
+			if (this._isRecent(`body:${other.id}`) || (slabKey && this._isRecent(slabKey))) {
+				return;
+			}
+
 			// Authoritative pre-impact speed from cannon-es contact equation.
 			// Returns negative (in m/s) when bodies are approaching along the contact
 			// normal — exactly what we want for a downward impact on a slab.
@@ -118,20 +128,14 @@ class Ball {
 			this._preImpactVelY = impactNormalVel < 0 ? impactNormalVel : (this._lastVelY || 0);
 
 			const isHardHit = ud.type === 'hard_slab';
-		this._emitLandingHint(isHardHit ? 'hard' : 'soft');
+			this._emitLandingHint(isHardHit ? 'hard' : 'soft');
 
-		// Spawn a per-hit particle burst AT THE BALL'S WORLD POSITION so the
-		// player gets a clear "this is what just happened" signal at the ball.
-		// Red for hard, theme-color for soft is handled by GameManager (slab break).
-		if (isHardHit && this._scene && this._particles) {
-			const p = new THREE.Vector3(0, this.body.position.y, this._visualZOffset);
-			this._particles.burst(p, new THREE.Color(0xFF3838), 12);
-		}
-
-			// Dedupe: same physics body or same logical slab within window.
-			const slabKey = ud.slab ? `slab:${ud.slab.uid}` : null;
-			if (this._isRecent(`body:${other.id}`) || (slabKey && this._isRecent(slabKey))) {
-				return;
+			// Spawn a per-hit particle burst AT THE BALL'S WORLD POSITION so the
+			// player gets a clear "this is what just happened" signal at the ball.
+			// Red for hard, theme-color for soft is handled by GameManager (slab break).
+			if (isHardHit && this._scene && this._particles) {
+				const p = new THREE.Vector3(0, this.body.position.y, this._visualZOffset);
+				this._particles.burst(p, new THREE.Color(0xFF3838), 12);
 			}
 
 			this._lastContactY = this.body.position.y;

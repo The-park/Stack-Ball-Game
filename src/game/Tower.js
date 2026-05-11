@@ -87,10 +87,14 @@ export default class Tower {
 
     // Initial rotation: align the TOP slab's danger arc to BACK (world -π/2).
     // Subsequent slabs spiral away — player must rotate to track the safe arc.
+    // Cycle 19 fix: matches the corrected picker formula. A spot with shape
+    // angle a sits at world XZ angle -a - θ_y (geo.rotateX(-π/2) flips the
+    // sign), so to place the danger centre at world -π/2 we need
+    // θ_y = π/2 - dangerCenterTowerAngle, not +dangerCenterTowerAngle + π/2.
     const topDangerCenterIdx = baseDangerStart + (dangerWidth - 1) / 2;
     const spotAngleStep = (2 * Math.PI) / totalSpots;
     const dangerCenterTowerAngle = -Math.PI / 2 + (topDangerCenterIdx + 0.5) * spotAngleStep;
-    this.towerGroup.rotation.y = dangerCenterTowerAngle + Math.PI / 2;
+    this.towerGroup.rotation.y = -dangerCenterTowerAngle + Math.PI / 2;
 
     // Force initial alignment of physics bodies + active-spot mask BEFORE the
     // first physics step (otherwise all 20 spots collide on frame 1, ball can
@@ -121,6 +125,26 @@ export default class Tower {
     const SYNC_BEHIND = 2.0;
 
     const groupRotY = this.towerGroup.rotation.y;
+
+    // SINGLE-CONTACT-SLAB FILTER: ball radius 0.40 + slab half-height 0.09 = 0.49,
+    // but slab spacing is 0.22 → ball can be simultaneously inside the y-range of
+    // 3-4 adjacent slabs. Without this filter, each slab's `updateActiveSpot`
+    // independently enables ONE body — so multiple body-mask=-1 contacts can fire
+    // in one physics step (one SOFT from slab N, one HARD from slab N+1), and the
+    // HUD pill flips while score AND hard-hit counter both accumulate. The fix:
+    // pick the SINGLE slab the ball is closest to and only enable its active
+    // spot; all other slabs get all spots disabled.
+    let contactSlab = null;
+    let contactDy = Infinity;
+    for (const slab of this.slabs) {
+      if (slab.isBroken) continue;
+      const dy = Math.abs(slab.yPosition - ballY);
+      if (dy < contactDy) {
+        contactDy = dy;
+        contactSlab = slab;
+      }
+    }
+
     for (const slab of this.slabs) {
       if (needsSync) {
         const dy = slab.yPosition - ballY;
@@ -128,9 +152,11 @@ export default class Tower {
           slab.syncBodiesToTower();
         }
       }
-      // Always recompute which spot is "front" so as the tower rotates the
-      // collidable spot moves with it. Cheap: 20 angle compares per slab.
-      slab.updateActiveSpot?.(groupRotY);
+      if (slab === contactSlab) {
+        slab.updateActiveSpot?.(groupRotY);
+      } else {
+        slab.disableAllSpots?.();
+      }
       slab.animateDebris(dt);
     }
   }

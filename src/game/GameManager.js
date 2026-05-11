@@ -46,10 +46,9 @@ class GameManager {
 		this._sequenceMeshes = [];
 		this._sequenceRafs = new Set();
 
-		// Fail budget — research: ref ships one-hit-fail. Compromise for web:
-		// 3 hits on early levels (forgiving onboarding), 1 hit at level 4+.
-		this._hardHitsThisLevel = 0;
-		this._maxHardHitsBeforeFail = 3;
+		// Cycle 18: game-over removed. Hard contacts now show a DANGER hint +
+		// bounce + score nudge, but never end the level. The game advances
+		// purely by clearing soft slabs while the player is holding.
 
 		this.tower.particleSystem = this.particles;
 		GameManager.instance = this;
@@ -65,9 +64,6 @@ class GameManager {
 		this._comboMultiplier = 1;
 		this._lastSoftHitAt = 0;
 		this._maxCombo = 0;
-		this._hardHitsThisLevel = 0;
-		// Level-scaled fail budget: 3 hits L1-3 (gentle), 1 hit L4+ (industry standard).
-		this._maxHardHitsBeforeFail = this.level <= 3 ? 3 : 1;
 		this._levelStartedAt = performance.now();
 		this._levelStats = this._freshLevelStats();
 		// Apply per-level sky/ground theme to the 3D background dome.
@@ -135,33 +131,19 @@ class GameManager {
 		if (now - (this._lastHardHitAt || 0) < 180) return;
 		this._lastHardHitAt = now;
 
+		// Cycle 18: hard contact is informational only. No fail trigger; combo
+		// resets and a small score nudge happen so the player still feels the
+		// hit, but the game continues — they keep rotating to find soft.
 		this._comboCount = 0;
 		this._comboMultiplier = 1;
 		this._lastSoftHitAt = 0;
 		this._levelStats.hardHits += 1;
-		this._hardHitsThisLevel += 1;
 		this.audioManager?.play('bounce');
-		// Tiny nudge — primary feedback is now hud.flashDanger() (the pink pulse).
 		this.renderer?.triggerShake?.(0.05);
 		this.hud.flashDanger?.();
 		this.score = Math.max(0, this.score - 3);
 		this.hud.updateProgress(this.tower.slabsBroken, this.tower.totalSlabs, this.score);
 		this.hud.updateCombo?.(0, 1, 0);
-
-		if (this._hardHitsThisLevel >= this._maxHardHitsBeforeFail) {
-			this._failLevel();
-		}
-	}
-
-	_failLevel() {
-		if (this.state === GameState.DEAD) return;
-		this.state = GameState.DEAD;
-		// Duck BGM so the death SFX and game-over modal read clearly.
-		this.audioManager?.duckBGM?.(0.35, 400, 1200);
-		this.audioManager?.play('death');
-		this.renderer?.triggerShake?.(0.10);  // capped — modal + duck carry the moment
-		this.ball.die?.();
-		this.hud.showGameOver?.(this.score);
 	}
 
 	togglePause() {

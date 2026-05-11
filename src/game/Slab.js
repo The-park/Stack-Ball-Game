@@ -176,6 +176,17 @@ export default class Slab {
     }
   }
 
+  // Disable all collision on this slab (called for slabs the ball isn't on).
+  // Used by Tower.update's single-contact-slab filter to prevent multi-slab
+  // simultaneous contact events.
+  disableAllSpots() {
+    if (this.isBroken) return;
+    for (const p of this.pieces) {
+      if (p.body) p.body.collisionFilterMask = 0;
+    }
+    this._lastActiveIdx = undefined;  // reset so next mask-on rebuilds fresh
+  }
+
   // Per-frame: of all 20 spots, only the one whose world-angle is closest to
   // the camera-front (world +Z = π/2) gets collisionFilterMask = -1 (collidable).
   // All others get mask 0 (non-collidable). The ball at the axis only ever
@@ -189,7 +200,16 @@ export default class Slab {
     const deltas = new Array(this.pieces.length);
     for (let i = 0; i < this.pieces.length; i++) {
       const p = this.pieces[i];
-      const worldAngle = ((p.spotLocalAngle - towerWorldRotationY) % TAU + TAU) % TAU;
+      // Cycle 19 fix: negate spotLocalAngle. ExtrudeGeometry's geo.rotateX(-π/2)
+      // maps a shape vertex (cos(a), sin(a), 0) to world-XZ (cos(a), 0, -sin(a)),
+      // so the mesh's tower-local XZ angle is -a, not +a. After the towerGroup's
+      // Ry(θ) rotation, the spot's true world-XZ angle is -a - θ. The previous
+      // formula (a - θ) only matched at θ ≡ -π/2 (mod π); at other rotations
+      // it picked a spot up to half a circumference away from the visually-front
+      // spot. With the multi-slab filter from cycle 17 giving the picker sole
+      // authority over which body is collidable, that mismatch surfaced as the
+      // user-reported "DANGER pill on a yellow soft tile" glitch.
+      const worldAngle = ((-p.spotLocalAngle - towerWorldRotationY) % TAU + TAU) % TAU;
       let delta = Math.abs(worldAngle - target);
       if (delta > Math.PI) delta = TAU - delta;
       deltas[i] = delta;

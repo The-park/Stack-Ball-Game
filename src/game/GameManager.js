@@ -46,10 +46,10 @@ class GameManager {
 		this._sequenceMeshes = [];
 		this._sequenceRafs = new Set();
 
-		// Fail condition: 5 hard hits in a level → game over (was 3 — too strict
-		// given the previous fast pace; calmed alongside the gravity/bounce tune).
+		// Fail budget — research: ref ships one-hit-fail. Compromise for web:
+		// 3 hits on early levels (forgiving onboarding), 1 hit at level 4+.
 		this._hardHitsThisLevel = 0;
-		this._maxHardHitsBeforeFail = 5;
+		this._maxHardHitsBeforeFail = 3;
 
 		this.tower.particleSystem = this.particles;
 		GameManager.instance = this;
@@ -66,6 +66,8 @@ class GameManager {
 		this._lastSoftHitAt = 0;
 		this._maxCombo = 0;
 		this._hardHitsThisLevel = 0;
+		// Level-scaled fail budget: 3 hits L1-3 (gentle), 1 hit L4+ (industry standard).
+		this._maxHardHitsBeforeFail = this.level <= 3 ? 3 : 1;
 		this._levelStartedAt = performance.now();
 		this._levelStats = this._freshLevelStats();
 		// Apply per-level sky/ground theme to the 3D background dome.

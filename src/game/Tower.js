@@ -1,20 +1,23 @@
 import * as THREE from 'three';
 import Slab, { getLevelTheme } from './Slab.js';
 
-const SLAB_SPACING = 0.40;  // Tight stacking for tall thin column, slabs 0.30 thick.
+const SLAB_SPACING = 0.22;  // Reference-research recommended — denser thin-disc stack.
 
 export function getLevelConfig(levelNumber) {
   const level = Math.max(1, Math.min(levelNumber, 10));
-  // Danger-column width grows with level — early levels are forgiving (~25% hard arc),
-  // later levels narrow the safe arc (~50% hard).
   const dangerWidth = Math.min(11, 5 + Math.floor(level * 0.6));
+  // Spiral shift per level — research note: ref shows corkscrew pattern, not vertical.
+  const spiralShift = Math.min(3, 1 + Math.floor((level - 1) * 0.3));
 
   return {
-    // Many more slabs at tight spacing — matches reference's "thin disc stack" silhouette.
-    slabCount: 28 + level * 2,
-    rotationSpeed: 0,
+    // Many more thin slabs (research §slabs): 40 + level*3 (was 28 + level*2).
+    slabCount: 40 + level * 3,
+    // Gentle auto-rotation per industry research (was 0 — comment claiming "ref ships static"
+    // was wrong, frames ref_05/10/12 show motion).
+    rotationSpeed: 0.12 + level * 0.04,
     spotsPerSide: 4,
     dangerWidth,
+    spiralShift,
     poleRadius: 0.16,
     poleGap: 0.14,
     levelTheme: getLevelTheme(level),
@@ -41,23 +44,30 @@ export default class Tower {
     this.slabs = [];
     this.slabsBroken = 0;
     this.totalSlabs = config.slabCount;
-    // Reference Stack Ball / Helix Jump titles ship with NO auto-drift — the
-    // tower is rock-still until the player drags. Cycle-5 matches that.
-    this.autoRotationSpeed = 0;
+    // Industry research: ref does auto-drift slowly (visible in ref_05/10/12). Was 0.
+    this.autoRotationSpeed = (Math.random() < 0.5 ? -1 : 1) * (config.rotationSpeed ?? 0.15);
 
-    // Pick ONE rotation offset and ONE danger-column start that all slabs of
-    // this level share. This gives the level a coherent vertical hard band
-    // the player rotates the tower to dodge.
+    // Per-slab dangerStart — produces a CORKSCREW pattern down the tower (ref §2).
+    // Each slab's safe arc is shifted from the one above by `spiralShift` spots,
+    // with a deterministic jitter so the pattern doesn't read as a rigid helix.
     const totalSpots = (config.spotsPerSide ?? 4) * 5;
     const dangerWidth = Math.max(2, Math.min(totalSpots - 4, (config.dangerWidth ?? 6) | 0));
-    const sharedConfig = {
-      ...config,
-      levelRotationOffset: 0,
-      dangerStart: Math.floor(Math.random() * totalSpots),
-    };
+    const spiralShift = Math.max(0, (config.spiralShift ?? 1) | 0);
+    const baseDangerStart = Math.floor(Math.random() * totalSpots);
+    const spiralDir = Math.random() < 0.5 ? 1 : -1;
 
     for (let i = 0; i < config.slabCount; i++) {
-      const yPos = -(i * SLAB_SPACING);  // stack downward from Y=0
+      const yPos = -(i * SLAB_SPACING);
+
+      const jitter = ((i * 7 + 3) % 5) - 2;  // deterministic -2..+2 per slab
+      const slabDangerStart =
+        ((baseDangerStart + spiralDir * i * spiralShift + jitter) % totalSpots + totalSpots) % totalSpots;
+
+      const slabConfig = {
+        ...config,
+        levelRotationOffset: 0,
+        dangerStart: slabDangerStart,
+      };
 
       const slab = new Slab(
         this.scene,
@@ -65,7 +75,7 @@ export default class Tower {
         this.physics,
         yPos,
         i,
-        sharedConfig,
+        slabConfig,
         this.towerGroup
       );
       this.slabs.push(slab);
@@ -74,15 +84,11 @@ export default class Tower {
     // Background re-skin: tell the renderer about the per-level sky/ground tones.
     this.currentTheme = config.levelTheme;
 
-    // Rotate the tower so the danger arc's center faces the BACK
-    // (-Z direction = behind the tower from camera at +Z).
-    // Three.js Y-rotation: a point at local angle θ ends up at world angle
-    // θ - rotation.y. So to map dangerCenterTowerAngle → world -π/2:
-    //   dangerCenterTowerAngle - rotation.y = -π/2
-    //   rotation.y = dangerCenterTowerAngle + π/2
-    const dangerCenterIdx = sharedConfig.dangerStart + (dangerWidth - 1) / 2;
+    // Initial rotation: align the TOP slab's danger arc to BACK (world -π/2).
+    // Subsequent slabs spiral away — player must rotate to track the safe arc.
+    const topDangerCenterIdx = baseDangerStart + (dangerWidth - 1) / 2;
     const spotAngleStep = (2 * Math.PI) / totalSpots;
-    const dangerCenterTowerAngle = -Math.PI / 2 + (dangerCenterIdx + 0.5) * spotAngleStep;
+    const dangerCenterTowerAngle = -Math.PI / 2 + (topDangerCenterIdx + 0.5) * spotAngleStep;
     this.towerGroup.rotation.y = dangerCenterTowerAngle + Math.PI / 2;
 
     // Force initial alignment of physics bodies + active-spot mask BEFORE the

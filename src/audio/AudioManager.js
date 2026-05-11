@@ -150,13 +150,13 @@ class AudioManager {
 		o1.start(t);
 		o1.stop(t + 0.20);
 
-		// Air — a gentle higher partial gives the "sparkle".
+		// Air — gentle higher partial (research §sound: soften upper for repeat play).
 		const o2 = ctx.createOscillator();
 		o2.type = 'sine';
-		o2.frequency.value = 1760 * pitch;
+		o2.frequency.value = 1320 * pitch;  // was 1760 — too piercing on chains
 		const g2 = ctx.createGain();
 		g2.gain.setValueAtTime(0.0, t);
-		g2.gain.linearRampToValueAtTime(0.18, t + 0.004);
+		g2.gain.linearRampToValueAtTime(0.10, t + 0.004);  // was 0.18
 		g2.gain.exponentialRampToValueAtTime(0.001, t + 0.10);
 		o2.connect(g2).connect(out);
 		o2.start(t);

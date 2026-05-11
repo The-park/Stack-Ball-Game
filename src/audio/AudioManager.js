@@ -128,9 +128,13 @@ class AudioManager {
 
 	_synthBreak(ctx, dest, v) {
 		// Pleasant "ting" — two-osc layered triangle bell tone.
-		// Velocity scales pitch in 0.85–1.25x range so consecutive breaks feel musical.
+		// A pentatonic 5-step walk over consecutive hits gives chains a melodic
+		// feel — much more "music" than the previous velocity-only pitch.
+		const PENTATONIC = [1.0, 9 / 8, 5 / 4, 3 / 2, 5 / 3];  // C-major pentatonic ratios
+		this._breakStep = ((this._breakStep ?? -1) + 1) % PENTATONIC.length;
+		const noteRatio = PENTATONIC[this._breakStep];
 		const t = ctx.currentTime;
-		const pitch = Math.max(0.85, Math.min(1.25, v));
+		const pitch = Math.max(0.85, Math.min(1.25, v)) * noteRatio;
 
 		// Master envelope for this hit — short attack, exp decay.
 		const out = ctx.createGain();
@@ -269,11 +273,11 @@ class AudioManager {
 		const ctx = this._ensureCtx();
 		if (!ctx || !this._masterGain) return;
 
-		// Gentle ambient pad — replaces the sawtooth drone the user complained about.
-		// Soft sines (no harmonics), warm triad, very heavy lowpass, low volume.
+		// Gentle ambient pad — audible but never competing with SFX.
+		// Bumped 0.045 → 0.085 so the player can actually hear the music.
 		const out = ctx.createGain();
 		out.gain.value = 0.0;
-		out.gain.linearRampToValueAtTime(0.045, ctx.currentTime + 2.0);  // was 0.10 — quieter
+		out.gain.linearRampToValueAtTime(0.085, ctx.currentTime + 2.0);
 		out.connect(this._masterGain);
 		this._bgmGain = out;
 
@@ -352,8 +356,8 @@ class AudioManager {
 			const t = this._ctx.currentTime;
 			const g = this._bgmGain.gain;
 			const cur = g.value;
-			// Base volume matches the new gentle pad (0.045, was 0.10).
-			const base = 0.045;
+			// Base volume matches the new audible pad (0.085).
+			const base = 0.085;
 			try {
 				g.cancelScheduledValues(t);
 				g.setValueAtTime(cur, t);

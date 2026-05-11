@@ -25,7 +25,6 @@ export function getLevelTheme(levelNumber) {
 
 const HARD_COLOR = 0x0A0A0A;  // True black — research-recommended max contrast vs theme color
 const PENTAGON_SIDES = 5;
-// Research-recommended: thin disc stack (thickness 0.18, spacing 0.22, ~40+L*3 slabs).
 const THICKNESS = 0.18;
 const OUTER_R = 1.70;
 
@@ -137,8 +136,7 @@ export default class Slab {
     const spotsPerSide = Math.max(3, config?.spotsPerSide ?? 4);
     const poleRadius = Math.max(0.05, config?.poleRadius ?? 0.22);
     const poleGap = Math.max(0.08, config?.poleGap ?? 0.18);
-    // Inner radius 0.30 — smaller than ball radius 0.40 so the ball rests on
-    // top of the annulus. Tightened together with smaller OUTER_R for ref match.
+    // Inner radius back to small gap (ball is at axis, needs to reach slab inner edge).
     const innerRadius = Math.max(0.30, poleRadius + poleGap);
     const totalSpots = PENTAGON_SIDES * spotsPerSide;
 

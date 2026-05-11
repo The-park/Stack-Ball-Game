@@ -19,8 +19,8 @@ export function getLevelConfig(levelNumber) {
     spotsPerSide: 4,
     dangerWidth,
     spiralShift,
-    poleRadius: 0.16,
-    poleGap: 0.14,
+    poleRadius: 0.28,
+    poleGap: 0.02,
     levelTheme: getLevelTheme(level),
   };
 }

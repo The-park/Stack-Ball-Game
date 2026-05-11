@@ -6,7 +6,10 @@ class Pole {
 	constructor(scene, _physics) {
 		void _physics;
 		this.scene = scene;
-		const poleRadius = 0.16;  // Slimmer pole to match smaller tower scale
+		// Visually thicker pole to dominate the central column (reference look).
+		// Physics-wise, the pole has NO body — ball at axis passes through its
+		// volume. Slabs around the pole catch the ball at their inner edges.
+		const poleRadius = 0.28;
 
 		// Short cylinder — height is dynamically rescaled to track the ball so
 		// the pole only ever appears ABOVE the ball (no visible stub below ball).

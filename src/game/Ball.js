@@ -3,9 +3,10 @@ import * as CANNON from 'cannon-es';
 
 const BALL_RADIUS = 0.40;
 const BALL_START_Y = 0.55;
-// Re-tuned bounce — reference shows clear visible bounces on hard hits.
-// MIN raised so even a slow hard-hit produces ~0.5 m apex (≈ 2 layers visible).
-// MAX_HEIGHT raised so high-velocity hard hits arc visibly back up.
+// Ball stays AT THE AXIS for physics correctness (active-spot collision needs it).
+// Visual illusion of "ball next to pole" is created via _visualZOffset shifting
+// the mesh forward while the body stays centered.
+const BALL_FORWARD_Z = 0;
 const BOUNCE_MAX_HEIGHT = 2.0;
 const BOUNCE_MIN_SPEED = 7.5;
 const BOUNCE_MAX_SPEED = 11.0;
@@ -21,11 +22,11 @@ class Ball {
 		this.physics = physics;
 		void level;
 
-		// Visual-only Z offset: ball is rendered SHIFTED FORWARD (+Z toward camera)
-		// so it visibly sits over the FRONT spot of the slab instead of straddling
-		// the inner-hole seam between adjacent wedges. The physics body stays at
-		// the axis — the active-spot collision model handles which spot collides.
-		this._visualZOffset = 0.35;
+		// Body stays at axis (collision invariant). Mesh is rendered at the
+		// FRONT spot's geometric center (apothem midpoint between inner edge
+		// 0.24 and outer 1.38 ≈ 0.81). This places the ball squarely over the
+		// active spot's top-face mesh, not at the convergence seam.
+		this._visualZOffset = 0.85;
 		this._baseScale = 1.0;
 
 		// Research-recommended cobalt ball + glossier clearcoat (was sky-blue).
@@ -70,6 +71,8 @@ class Ball {
 
 		this.body = this.physics.createBallBody(BALL_RADIUS, { x: 0, y: BALL_START_Y, z: 0 });
 
+		// Will be wired by main.js so Ball can fire its own per-hit particle bursts.
+		this._particles = null;
 		this.isAlive = true;
 		this._dieAnimId = null;
 		this._lastVelY = 0;
@@ -114,7 +117,16 @@ class Ball {
 			// Fall back to last frame's velocity if contact data missing.
 			this._preImpactVelY = impactNormalVel < 0 ? impactNormalVel : (this._lastVelY || 0);
 
-			this._emitLandingHint(ud.type === 'soft_slab' ? 'soft' : 'hard');
+			const isHardHit = ud.type === 'hard_slab';
+		this._emitLandingHint(isHardHit ? 'hard' : 'soft');
+
+		// Spawn a per-hit particle burst AT THE BALL'S WORLD POSITION so the
+		// player gets a clear "this is what just happened" signal at the ball.
+		// Red for hard, theme-color for soft is handled by GameManager (slab break).
+		if (isHardHit && this._scene && this._particles) {
+			const p = new THREE.Vector3(0, this.body.position.y, this._visualZOffset);
+			this._particles.burst(p, new THREE.Color(0xFF3838), 12);
+		}
 
 			// Dedupe: same physics body or same logical slab within window.
 			const slabKey = ud.slab ? `slab:${ud.slab.uid}` : null;
@@ -166,6 +178,7 @@ class Ball {
 		}
 
 		this._postStepHandler = () => {
+			// Lock ball to axis — physics simplicity.
 			this.body.position.x = 0;
 			this.body.position.z = 0;
 			this.body.velocity.x = 0;
@@ -275,8 +288,11 @@ class Ball {
 			m.GameManager.instance?.notifyLandingType?.(type);
 		});
 
-		this._landingTintColor.setHex(type === 'soft' ? 0x9fffd0 : 0xffd29a);
-		this._landingTintTimer = 0.22;
+		// Strong tint — bright green for SOFT, bright red for HARD. Longer
+		// timer (0.45 s) so the cue is unmistakable. Lerp strength bumped
+		// to 0.95 in update() — near-full color override.
+		this._landingTintColor.setHex(type === 'soft' ? 0x3DFF7D : 0xFF3838);
+		this._landingTintTimer = 0.45;
 	}
 
 	// Velocity + height-aware bounce. Hard hits bounce HIGHER than soft-rebounds
@@ -411,15 +427,13 @@ class Ball {
 	}
 
 	update(dt) {
-		// Lock ball to pole axis — never drifts sideways
 		this.body.position.x = 0;
 		this.body.position.z = 0;
 		this.body.velocity.x = 0;
 		this.body.velocity.z = 0;
 		this.body.angularVelocity.set(0, 0, 0);
 
-		// Sync mesh to physics body. Mesh is rendered slightly FORWARD of body so
-		// the player visibly sees which spot the ball is landing on.
+		// Mesh rendered FORWARD so visually the ball sits over the front spot.
 		this.mesh.position.x = 0;
 		this.mesh.position.z = this._visualZOffset;
 
@@ -431,9 +445,9 @@ class Ball {
 		this._fallHeight = Math.max(0, this._lastContactY - this.body.position.y);
 
 		this._shadow.position.set(
-			this.body.position.x,
+			0,
 			this.body.position.y - BALL_RADIUS - 0.04,
-			this.body.position.z
+			this._visualZOffset
 		);
 		const fallNorm = THREE.MathUtils.clamp((this._fallHeight || 0) / 4.0, 0, 1);
 		const shadowScale = THREE.MathUtils.lerp(1.0, 0.55, fallNorm);
@@ -445,8 +459,9 @@ class Ball {
 
 		if (this._landingTintTimer > 0) {
 			this._landingTintTimer -= dt;
-			const t = Math.max(0, this._landingTintTimer / 0.22);
-			this.mesh.material.color.copy(this._baseSpriteColor).lerp(this._landingTintColor, t * 0.6);
+			const t = Math.max(0, this._landingTintTimer / 0.45);
+			// Stronger lerp (0.95) — ball flashes near-full color, unmistakable cue.
+			this.mesh.material.color.copy(this._baseSpriteColor).lerp(this._landingTintColor, t * 0.95);
 		} else {
 			this.mesh.material.color.copy(this._baseSpriteColor);
 		}
@@ -582,7 +597,7 @@ class Ball {
 		this.mesh.position.set(0, BALL_START_Y, this._visualZOffset);
 		this.mesh.rotation.set(0, 0, 0);
 		this._applyScale(1, 1);
-		this._shadow.position.set(0, BALL_START_Y - BALL_RADIUS - 0.04, 0);
+		this._shadow.position.set(0, BALL_START_Y - BALL_RADIUS - 0.04, this._visualZOffset);
 		this._shadow.scale.setScalar(1);
 		this._shadow.material.opacity = 0.32;
 

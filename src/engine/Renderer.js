@@ -46,12 +46,11 @@ class Renderer {
 		this.scene.fog = new THREE.Fog(0xE8E2F2, 12, 38);
 
 		const aspect = window.innerWidth / window.innerHeight;
-		// Research-recommended camera: FOV 50 (was 34 telephoto — too flat), eye
-		// (0, 3.2, 12.5), look at (0, -3.5, 0). Pitch ≈ atan(6.7/12.5) ≈ 28° down.
-		// Matches Helix Jump / Stack Ball reference framing — ~16 slabs visible.
-		this.camera = new THREE.PerspectiveCamera(50, aspect, 0.1, 300);
-		this.camera.position.set(0, 3.2, 12.5);
-		this.camera.lookAt(0, -3.5, 0);
+		// Zoomed-in framing — about half the column visible at once (user request).
+		// FOV 36, z 9, follow offsets +2.5 / -1.0 → pitch ~21°, ~8 slabs visible.
+		this.camera = new THREE.PerspectiveCamera(36, aspect, 0.1, 300);
+		this.camera.position.set(0, 2.5, 9);
+		this.camera.lookAt(0, -1.0, 0);
 
 		this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
 		this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -71,7 +70,7 @@ class Renderer {
 		this._lookY = 0;
 		this.shakeIntensity = 0;
 		this._cameraBaseX = 0;
-		this._cameraBaseY = 3.2;
+		this._cameraBaseY = 2.5;
 
 		this._setupLights();
 		this._setupEnvironment();
@@ -235,8 +234,8 @@ class Renderer {
 
 	setupCamera(ballMesh) {
 		this._ballMesh = ballMesh;
-		this.camera.position.set(0, 3.2, 12.5);
-		this.camera.lookAt(0, -3.5, 0);
+		this.camera.position.set(0, 2.5, 9);
+		this.camera.lookAt(0, -1.0, 0);
 	}
 
 	updateCamera(dt) {
@@ -244,16 +243,16 @@ class Renderer {
 			return;
 		}
 
-		// Research-recommended follow offsets: camera +3.2 above ball, looks at
-		// -3.5 below ball. Pitch ~28°, FOV 50, z=12.5 → ~16 slabs visible.
-		const targetY = this._ballMesh.position.y + 3.2;
-		const lookY = this._ballMesh.position.y - 3.5;
+		// Zoomed follow: camera +2.5 above ball, looks at -1.0 below ball.
+		// Tighter view: ~8 slabs visible — about half the column at any moment.
+		const targetY = this._ballMesh.position.y + 2.5;
+		const lookY = this._ballMesh.position.y - 1.0;
 
 		this._cameraBaseY += (targetY - this._cameraBaseY) * 0.08;
 		this._cameraBaseX = 0;
 		this.camera.position.x = this._cameraBaseX;
 		this.camera.position.y = this._cameraBaseY;
-		this.camera.position.z = 12.5;
+		this.camera.position.z = 9;
 
 		this._lookY = this._lookY ?? 0;
 		this._lookY += (lookY - this._lookY) * 0.075;

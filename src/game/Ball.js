@@ -3,11 +3,12 @@ import * as CANNON from 'cannon-es';
 
 const BALL_RADIUS = 0.40;
 const BALL_START_Y = 0.55;
-// Research-cap bounce energy so the ball stays in low rhythmic arcs (ref shows
-// short hops between layers, not big punts).
-const BOUNCE_MAX_HEIGHT = 1.4;
-const BOUNCE_MIN_SPEED = 5.0;
-const BOUNCE_MAX_SPEED = 8.5;
+// Re-tuned bounce — reference shows clear visible bounces on hard hits.
+// MIN raised so even a slow hard-hit produces ~0.5 m apex (≈ 2 layers visible).
+// MAX_HEIGHT raised so high-velocity hard hits arc visibly back up.
+const BOUNCE_MAX_HEIGHT = 2.0;
+const BOUNCE_MIN_SPEED = 7.5;
+const BOUNCE_MAX_SPEED = 11.0;
 
 const HIT_DEDUPE_MS = 180;          // unified dedupe window for any hit type
 const HARD_LOCK_MS = 220;           // hard contact disables soft-break briefly
@@ -20,7 +21,11 @@ class Ball {
 		this.physics = physics;
 		void level;
 
-		this._visualZOffset = 0;
+		// Visual-only Z offset: ball is rendered SHIFTED FORWARD (+Z toward camera)
+		// so it visibly sits over the FRONT spot of the slab instead of straddling
+		// the inner-hole seam between adjacent wedges. The physics body stays at
+		// the axis — the active-spot collision model handles which spot collides.
+		this._visualZOffset = 0.35;
 		this._baseScale = 1.0;
 
 		// Research-recommended cobalt ball + glossier clearcoat (was sky-blue).
@@ -38,7 +43,7 @@ class Ball {
 		this.mesh = new THREE.Mesh(ballGeo, ballMat);
 		this.mesh.castShadow = true;
 		this.mesh.receiveShadow = false;
-		this.mesh.position.set(0, BALL_START_Y, 0);
+		this.mesh.position.set(0, BALL_START_Y, this._visualZOffset);
 		this.mesh.scale.setScalar(this._baseScale);
 		this._visualY = BALL_START_Y;
 		this._smoothedVelY = 0;
@@ -274,9 +279,8 @@ class Ball {
 		this._landingTintTimer = 0.22;
 	}
 
-	// Returns a playable bounce speed for ANY rebound (soft-no-break or hard).
-	// Gentle floor (~0.55 of MIN) so slow drops don't snap back violently;
-	// vCeil prevents the ball from clipping the camera headroom.
+	// Velocity + height-aware bounce. Hard hits bounce HIGHER than soft-rebounds
+	// so the player can visually tell from the bounce magnitude alone.
 	_computeBounceSpeed(contactY, preImpactVelY, isHard) {
 		const gravityY = Math.abs(this.physics?.world?.gravity?.y ?? 22);
 		const headRoom = Math.max(0.6, 3.4 - contactY);
@@ -284,14 +288,16 @@ class Ball {
 		const vCeil = Math.sqrt(2 * gravityY * targetHeight);
 
 		const vIn = Math.max(0, -Math.min(0, preImpactVelY || 0));
+		// Restitution: hard hits BOUNCE BIG (0.78 → 0.55), soft-no-press is softer.
 		const e = isHard
-			? THREE.MathUtils.lerp(0.55, 0.38, THREE.MathUtils.clamp(vIn / 14, 0, 1))
-			: THREE.MathUtils.lerp(0.50, 0.40, THREE.MathUtils.clamp(vIn / 14, 0, 1));
+			? THREE.MathUtils.lerp(0.78, 0.55, THREE.MathUtils.clamp(vIn / 14, 0, 1))
+			: THREE.MathUtils.lerp(0.52, 0.42, THREE.MathUtils.clamp(vIn / 14, 0, 1));
 		const vOutPhys = e * vIn;
-		// Lower floor (was 0.78 → 0.55) so the ball doesn't pinball off slow drops.
-		const vOutFloor = BOUNCE_MIN_SPEED * 0.55;
+		// Per-event floor: hard hits guarantee a visible bounce (~0.5 m apex);
+		// soft non-break bounces stay modest.
+		const vOutFloor = isHard ? BOUNCE_MIN_SPEED * 0.70 : BOUNCE_MIN_SPEED * 0.45;
 		const vOut = Math.min(vCeil, Math.max(vOutPhys, vOutFloor));
-		return THREE.MathUtils.clamp(vOut, BOUNCE_MIN_SPEED * 0.50, BOUNCE_MAX_SPEED);
+		return THREE.MathUtils.clamp(vOut, BOUNCE_MIN_SPEED * 0.42, BOUNCE_MAX_SPEED);
 	}
 
 	_queueBounce(speed) {
@@ -412,9 +418,10 @@ class Ball {
 		this.body.velocity.z = 0;
 		this.body.angularVelocity.set(0, 0, 0);
 
-		// Sync mesh to physics body (no Z-offset now that ball is a real 3D mesh).
+		// Sync mesh to physics body. Mesh is rendered slightly FORWARD of body so
+		// the player visibly sees which spot the ball is landing on.
 		this.mesh.position.x = 0;
-		this.mesh.position.z = 0;
+		this.mesh.position.z = this._visualZOffset;
 
 		this._resolveStuckContact();
 
@@ -572,7 +579,7 @@ class Ball {
 			this._dieAnimId = null;
 		}
 
-		this.mesh.position.set(0, BALL_START_Y, 0);
+		this.mesh.position.set(0, BALL_START_Y, this._visualZOffset);
 		this.mesh.rotation.set(0, 0, 0);
 		this._applyScale(1, 1);
 		this._shadow.position.set(0, BALL_START_Y - BALL_RADIUS - 0.04, 0);

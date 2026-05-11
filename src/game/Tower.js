@@ -12,9 +12,10 @@ export function getLevelConfig(levelNumber) {
   return {
     // Many more thin slabs (research §slabs): 40 + level*3 (was 28 + level*2).
     slabCount: 40 + level * 3,
-    // Gentle auto-rotation per industry research (was 0 — comment claiming "ref ships static"
-    // was wrong, frames ref_05/10/12 show motion).
-    rotationSpeed: 0.12 + level * 0.04,
+    // Gentle auto-rotation per industry research. Tuned slower than initial estimate
+    // (0.12 + L*0.04 was punishing — combined with spiral + 3-strike fail it gave
+    // real players no time to react). Now: 0.06 rad/s at L1, 0.20 rad/s at L10.
+    rotationSpeed: 0.06 + level * 0.015,
     spotsPerSide: 4,
     dangerWidth,
     spiralShift,

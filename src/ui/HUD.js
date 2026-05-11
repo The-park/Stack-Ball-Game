@@ -185,7 +185,33 @@ class HUD {
         transition:transform 0.12s ease-out;
       }
 
-      .sbp-landing-hint{display:none;}
+      .sbp-landing-hint{
+        position:absolute;
+        top:calc(max(20px,env(safe-area-inset-top,0px)) + 92px);
+        left:50%;
+        transform:translateX(-50%) scale(0.92);
+        min-width:120px;
+        padding:6px 16px;
+        border-radius:999px;
+        border:1.5px solid rgba(255,255,255,0.7);
+        background:rgba(255,255,255,0.92);
+        color:#1F2733;
+        text-align:center;
+        font-size:12px;font-weight:900;letter-spacing:1.6px;
+        opacity:0;pointer-events:none;z-index:22;
+        box-shadow:0 4px 12px rgba(0,0,0,0.18);
+        transition:opacity 0.14s ease, transform 0.14s ease, background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+      }
+      .sbp-landing-hint.is-soft{
+        background:linear-gradient(130deg,#FFD200,#FFB800);
+        color:#1F2733;
+        border-color:rgba(0,0,0,0.25);
+      }
+      .sbp-landing-hint.is-hard{
+        background:linear-gradient(130deg,#1F2733,#0A0A0A);
+        color:#FFFFFF;
+        border-color:rgba(255,255,255,0.7);
+      }
       .sbp-landing-hint.is-soft{
         background:linear-gradient(130deg,rgba(186,255,201,0.85),rgba(186,225,255,0.7));
         border-color:rgba(126,246,225,0.85);

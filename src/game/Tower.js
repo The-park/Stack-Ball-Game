@@ -103,7 +103,12 @@ export default class Tower {
   }
 
   update(dt, inputRotationDelta, ballY = 0) {
-    const rotDelta = (inputRotationDelta || 0) + this.autoRotationSpeed * dt;
+    // Hold-suspends-drift: when the player is actively pressing (hold-to-break
+    // mode), the tower stops auto-rotating so the player can commit to a target
+    // soft tile without the world flipping it to hard under them. The break-input
+    // signal is exposed via this.breakInputActive (set by main.js per frame).
+    const autoSpeed = this.breakInputActive ? 0 : this.autoRotationSpeed;
+    const rotDelta = (inputRotationDelta || 0) + autoSpeed * dt;
     this.towerGroup.rotation.y += rotDelta;
 
     // Skip the expensive world-transform sync if the tower didn't actually rotate this frame.
